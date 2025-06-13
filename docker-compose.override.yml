@@ -1,0 +1,32 @@
+# Docker Compose override for local development
+# This file allows developers to customize settings without modifying the main docker-compose.yml
+# Copy this to docker-compose.override.yml and customize as needed
+
+version: '3.8'
+
+services:
+  mysql:
+    # Uncomment to expose MySQL on a different port locally
+    # ports:
+    #   - "3307:3306"
+    
+    # Uncomment to add custom configuration
+    # volumes:
+    #   - ./config/custom.cnf:/etc/mysql/conf.d/custom.cnf:ro
+    
+    # Uncomment for development debugging
+    environment:
+      MYSQL_GENERAL_LOG: ${MYSQL_GENERAL_LOG:-0}
+
+  # Additional development services can be added here
+  # Example: Adminer database management tool
+  # adminer:
+  #   image: adminer:latest
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8081:8080"
+  #   networks:
+  #     - van-edu-network
+  #   depends_on:
+  #     mysql:
+  #       condition: service_healthy 

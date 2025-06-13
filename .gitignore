@@ -1,0 +1,58 @@
+# Environment and configuration files
+.env
+.env.local
+.env.production
+
+# Backup files
+backups/*.sql*
+!backups/.gitkeep
+
+# Log files
+logs/
+*.log
+
+# Database data (should be in Docker volumes)
+data/
+mysql-data/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Migration working files
+migrations/temp_*
+
+# Docker volumes (if mounted locally)
+mysql_data/
+mysql_logs/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+
+# Backup temporary files
+*.sql.tmp
+*.enc.tmp
+
+# SSH keys and certificates
+*.key
+*.pem
+*.crt
+*.csr
+
+# Package files
+node_modules/
+vendor/
+
+# Test files
+test-data/
+test-backups/ 
