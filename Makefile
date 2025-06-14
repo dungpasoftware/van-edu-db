@@ -103,11 +103,14 @@ list-backups: ## List available backups
 mysql: ## Connect to MySQL as root
 	docker exec -it van-edu-mysql mysql -u root -p$(MYSQL_ROOT_PASSWORD)
 
-mysql-user: ## Connect to MySQL as application user
+mysql-app: ## Connect to MySQL as application user
 	docker exec -it van-edu-mysql mysql -u$(MYSQL_USER) -p$(MYSQL_PASSWORD) $(MYSQL_DATABASE)
 
 mysql-readonly: ## Connect to MySQL as readonly user
 	docker exec -it van-edu-mysql mysql -u van_edu_readonly -p readonly_secure_2024! $(MYSQL_DATABASE)
+
+mysql-admin: ## Connect to MySQL as admin user
+	docker exec -it van-edu-mysql mysql -u van_edu_admin -p admin_secure_2024! $(MYSQL_DATABASE)
 
 # Development Operations
 reset: ## Reset database (WARNING: destroys all data)
@@ -130,16 +133,21 @@ clean: ## Clean up containers and volumes
 
 # Monitoring Operations
 stats: ## Show database statistics
-	@echo "Database Statistics:"
+	@echo "Van Edu Premium Platform Statistics:"
 	@docker exec van-edu-mysql mysql -u$(MYSQL_USER) -p$(MYSQL_PASSWORD) -e "\
 		USE $(MYSQL_DATABASE); \
 		SELECT 'Users' as Table_Name, COUNT(*) as Count FROM users \
-		UNION ALL SELECT 'Courses', COUNT(*) FROM courses \
+		UNION ALL SELECT 'Premium Users', COUNT(*) FROM users WHERE isPremium = TRUE \
+		UNION ALL SELECT 'Admin Users', COUNT(*) FROM users WHERE role = 'admin' \
+		UNION ALL SELECT 'Packages', COUNT(*) FROM package \
+		UNION ALL SELECT 'Payment Transactions', COUNT(*) FROM payment_transaction \
+		UNION ALL SELECT 'Confirmed Payments', COUNT(*) FROM payment_transaction WHERE status = 'confirmed' \
+		UNION ALL SELECT 'Pending Payments', COUNT(*) FROM payment_transaction WHERE status = 'pending' \
 		UNION ALL SELECT 'Categories', COUNT(*) FROM categories \
-		UNION ALL SELECT 'Enrollments', COUNT(*) FROM enrollments \
+		UNION ALL SELECT 'Courses', COUNT(*) FROM courses \
+		UNION ALL SELECT 'Premium Courses', COUNT(*) FROM courses WHERE isPremium = TRUE \
 		UNION ALL SELECT 'Lessons', COUNT(*) FROM lessons \
-		UNION ALL SELECT 'Payments', COUNT(*) FROM payments \
-		UNION ALL SELECT 'Reviews', COUNT(*) FROM reviews;" --table
+		UNION ALL SELECT 'Premium Lessons', COUNT(*) FROM lessons WHERE isPremium = TRUE;" --table
 
 tables: ## List all tables
 	@docker exec van-edu-mysql mysql -u$(MYSQL_USER) -p$(MYSQL_PASSWORD) -e "USE $(MYSQL_DATABASE); SHOW TABLES;" --table
@@ -165,6 +173,29 @@ check-permissions: ## Check user permissions
 	@docker exec van-edu-mysql mysql -u root -p$(MYSQL_ROOT_PASSWORD) -e "\
 		SELECT User, Host, db, Select_priv, Insert_priv, Update_priv, Delete_priv \
 		FROM mysql.db WHERE User LIKE 'van_edu_%' ORDER BY User;" --table
+
+# Premium Operations
+premium-stats: ## Show premium subscription statistics
+	@echo "Premium Subscription Statistics:"
+	@docker exec van-edu-mysql mysql -u$(MYSQL_USER) -p$(MYSQL_PASSWORD) -e "\
+		USE $(MYSQL_DATABASE); \
+		SELECT p.name as Package, p.price as Price, COUNT(pt.id) as Purchases, SUM(CASE WHEN pt.status='confirmed' THEN pt.amount ELSE 0 END) as Revenue \
+		FROM package p LEFT JOIN payment_transaction pt ON p.id = pt.packageId \
+		GROUP BY p.id, p.name, p.price ORDER BY Revenue DESC;" --table
+
+payment-status: ## Show payment transaction status
+	@echo "Payment Transaction Status:"
+	@docker exec van-edu-mysql mysql -u$(MYSQL_USER) -p$(MYSQL_PASSWORD) -e "\
+		USE $(MYSQL_DATABASE); \
+		SELECT status, COUNT(*) as count, SUM(amount) as total_amount, AVG(amount) as avg_amount \
+		FROM payment_transaction GROUP BY status;" --table
+
+expire-premium: ## Check for expired premium subscriptions
+	@echo "Checking for expired premium subscriptions..."
+	@docker exec van-edu-mysql mysql -u$(MYSQL_USER) -p$(MYSQL_PASSWORD) -e "\
+		USE $(MYSQL_DATABASE); \
+		SELECT fullName, email, premiumExpiryDate, currentPackage \
+		FROM users WHERE isPremium = TRUE AND premiumExpiryDate < NOW();" --table
 
 # Environment Operations
 setup: ## Initial setup (copy env file, make scripts executable)

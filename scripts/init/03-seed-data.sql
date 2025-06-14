@@ -1,176 +1,187 @@
--- Sample data for Van Edu platform
--- This script populates the database with test data
+-- Van Edu Premium Subscription Platform - Sample Data
+-- Version: 2.0
+-- Architecture: Premium subscription platform with QR payment system
 
 USE van_edu_db;
 
--- Insert sample categories
-INSERT INTO categories (name, description, slug, sort_order) VALUES
-('Programming', 'Learn programming languages and software development', 'programming', 1),
-('Web Development', 'Frontend and backend web development courses', 'web-development', 2),
-('Data Science', 'Data analysis, machine learning, and AI courses', 'data-science', 3),
-('Design', 'UI/UX design, graphic design, and visual arts', 'design', 4),
-('Business', 'Business skills, entrepreneurship, and management', 'business', 5),
-('Languages', 'Foreign language learning courses', 'languages', 6);
+-- Disable foreign key checks for seeding
+SET FOREIGN_KEY_CHECKS = 0;
 
--- Insert subcategories
-INSERT INTO categories (name, description, slug, parent_id, sort_order) VALUES
-('JavaScript', 'JavaScript programming courses', 'javascript', 1, 1),
-('Python', 'Python programming courses', 'python', 1, 2),
-('React', 'React.js frontend development', 'react', 2, 1),
-('Node.js', 'Backend development with Node.js', 'nodejs', 2, 2),
-('Machine Learning', 'ML algorithms and applications', 'machine-learning', 3, 1),
-('UI Design', 'User interface design principles', 'ui-design', 4, 1);
+-- Clear existing data
+TRUNCATE TABLE payment_transaction;
+TRUNCATE TABLE lessons;
+TRUNCATE TABLE courses;
+TRUNCATE TABLE categories;
+TRUNCATE TABLE package;
+TRUNCATE TABLE users;
 
--- Insert sample users (passwords are hashed - in real app use bcrypt)
-INSERT INTO users (email, password, full_name, role, phone, age) VALUES
-('admin@vanedu.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Admin User', 'admin', '+1234567890', 30),
-('instructor1@vanedu.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'John Smith', 'instructor', '+1234567891', 35),
-('instructor2@vanedu.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Sarah Johnson', 'instructor', '+1234567892', 28),
-('student1@vanedu.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Mike Davis', 'student', '+1234567893', 22),
-('student2@vanedu.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Emma Wilson', 'student', '+1234567894', 24),
-('student3@vanedu.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Alex Brown', 'student', '+1234567895', 26);
+-- Enable foreign key checks
+SET FOREIGN_KEY_CHECKS = 1;
 
--- Insert sample courses
-INSERT INTO courses (title, description, short_description, price, original_price, instructor_id, category_id, status, level, duration_minutes, requirements, what_you_learn, target_audience, featured, published_at) VALUES
-(
-    'Complete JavaScript Bootcamp 2024',
-    'Master JavaScript from basics to advanced concepts. This comprehensive course covers ES6+, DOM manipulation, async programming, and modern frameworks.',
-    'Learn JavaScript from zero to hero with hands-on projects',
-    89.99,
-    199.99,
-    2,
-    7,
-    'published',
-    'beginner',
-    1200,
-    '["Basic computer knowledge", "No programming experience required"]',
-    '["JavaScript fundamentals", "DOM manipulation", "Async programming", "ES6+ features", "Project development"]',
-    '["Complete beginners", "Self-taught developers", "Career changers"]',
-    TRUE,
-    NOW()
-),
-(
-    'React.js - The Complete Guide',
-    'Build powerful web applications with React.js. Learn hooks, context, routing, and state management with real-world projects.',
-    'Master React.js with practical projects and modern techniques',
-    129.99,
-    249.99,
-    2,
-    9,
-    'published',
-    'intermediate',
-    1800,
-    '["JavaScript knowledge", "HTML & CSS basics", "Basic programming concepts"]',
-    '["React components", "Hooks and state management", "Routing", "API integration", "Testing"]',
-    '["JavaScript developers", "Frontend developers", "Web developers"]',
-    TRUE,
-    NOW()
-),
-(
-    'Python for Data Science',
-    'Learn Python programming for data analysis, visualization, and machine learning. Includes pandas, numpy, matplotlib, and scikit-learn.',
-    'Complete Python data science course with real projects',
-    149.99,
-    299.99,
-    3,
-    11,
-    'published',
-    'intermediate',
-    2400,
-    '["Basic math knowledge", "No programming experience required"]',
-    '["Python programming", "Data analysis with pandas", "Data visualization", "Machine learning basics", "Statistical analysis"]',
-    '["Data enthusiasts", "Career changers", "Students", "Professionals"]',
-    FALSE,
-    NOW()
-),
-(
-    'UI/UX Design Fundamentals',
-    'Master the principles of user interface and user experience design. Learn design thinking, prototyping, and industry-standard tools.',
-    'Complete guide to UI/UX design principles and tools',
-    99.99,
-    179.99,
-    3,
-    12,
-    'published',
-    'beginner',
-    900,
-    '["Basic computer skills", "Design interest", "No experience required"]',
-    '["Design principles", "User research", "Wireframing", "Prototyping", "Design tools"]',
-    '["Aspiring designers", "Developers", "Entrepreneurs", "Students"]',
-    FALSE,
-    NOW()
+-- Insert subscription packages
+INSERT INTO package (name, type, description, price, durationDays, isActive) VALUES
+('Monthly Premium', 'monthly', 'Get unlimited access to all courses and premium content for 30 days', 9.99, 30, TRUE),
+('Annual Premium', 'annual', 'Get unlimited access to all courses and premium content for 12 months. Save 40%!', 71.99, 365, TRUE),
+('Lifetime Premium', 'lifetime', 'Get unlimited access to all courses and premium content forever. One-time payment!', 199.99, NULL, TRUE);
+
+-- Insert admin permissions for sample admin users
+SET @admin_permissions = JSON_ARRAY(
+    'upload_video',
+    'edit_video', 
+    'delete_video',
+    'create_category',
+    'edit_category',
+    'delete_category',
+    'view_users',
+    'edit_users',
+    'delete_users',
+    'view_analytics',
+    'manage_settings'
 );
 
--- Insert sample lessons for JavaScript course
-INSERT INTO lessons (course_id, title, content, video_duration, sort_order, is_free) VALUES
-(1, 'Introduction to JavaScript', 'Welcome to the JavaScript bootcamp! In this lesson, we will cover what JavaScript is and why it is important for web development.', 480, 1, TRUE),
-(1, 'Variables and Data Types', 'Learn about JavaScript variables, let, const, and different data types including strings, numbers, booleans, arrays, and objects.', 720, 2, TRUE),
-(1, 'Functions and Scope', 'Understanding JavaScript functions, parameters, return values, and scope concepts.', 900, 3, FALSE),
-(1, 'DOM Manipulation', 'Learn how to interact with HTML elements using JavaScript and the Document Object Model.', 1080, 4, FALSE),
-(1, 'Event Handling', 'Master JavaScript events, event listeners, and creating interactive web pages.', 840, 5, FALSE);
+-- Insert sample users
+INSERT INTO users (fullName, email, password, phone, address, age, role, isPremium, premiumExpiryDate, currentPackage, permissions) VALUES
+-- Admin users
+('Admin Super User', 'admin@vanedu.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBdXIG/QYuZ7NW', '+1234567890', '123 Admin Street, Tech City', 30, 'admin', FALSE, NULL, NULL, @admin_permissions),
+('Content Manager', 'content@vanedu.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBdXIG/QYuZ7NW', '+1234567891', '456 Content Ave, Media City', 28, 'admin', FALSE, NULL, NULL, JSON_ARRAY('upload_video', 'edit_video', 'create_category', 'edit_category')),
 
--- Insert sample lessons for React course
-INSERT INTO lessons (course_id, title, content, video_duration, sort_order, is_free) VALUES
-(2, 'React Introduction', 'Introduction to React.js, component-based architecture, and setting up your development environment.', 600, 1, TRUE),
-(2, 'Components and JSX', 'Learn about React components, JSX syntax, and how to create your first React components.', 780, 2, FALSE),
-(3, 'Python Basics', 'Introduction to Python programming language, syntax, and basic concepts.', 540, 1, TRUE),
-(4, 'Design Principles', 'Fundamental principles of good design: contrast, repetition, alignment, and proximity.', 420, 1, TRUE);
+-- Normal users - Free accounts
+('John Smith', 'john@example.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBdXIG/QYuZ7NW', '+1555123456', '789 Student Lane, Learning City', 22, 'user', FALSE, NULL, NULL, NULL),
+('Sarah Johnson', 'sarah@example.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBdXIG/QYuZ7NW', '+1555123457', '321 Knowledge Street, Study Town', 25, 'user', FALSE, NULL, NULL, NULL),
 
--- Insert sample enrollments
-INSERT INTO enrollments (user_id, course_id, progress) VALUES
-(4, 1, 45.50),
-(4, 2, 12.25),
-(5, 1, 78.90),
-(5, 3, 23.75),
-(6, 1, 100.00),
-(6, 4, 56.30);
+-- Premium users
+('Michael Brown', 'michael@example.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBdXIG/QYuZ7NW', '+1555123458', '654 Premium Blvd, Elite District', 29, 'user', TRUE, '2024-12-31 23:59:59', 'monthly', NULL),
+('Emily Davis', 'emily@example.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBdXIG/QYuZ7NW', '+1555123459', '987 Annual Ave, Subscriber City', 26, 'user', TRUE, '2025-06-30 23:59:59', 'annual', NULL),
+('David Wilson', 'david@example.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBdXIG/QYuZ7NW', '+1555123460', '147 Lifetime Lane, Forever City', 35, 'user', TRUE, NULL, 'lifetime', NULL);
 
--- Insert sample lesson progress
-INSERT INTO lesson_progress (user_id, lesson_id, course_id, completed, watch_time) VALUES
-(4, 1, 1, TRUE, 480),
-(4, 2, 1, TRUE, 720),
-(4, 3, 1, FALSE, 450),
-(5, 1, 1, TRUE, 480),
-(5, 2, 1, TRUE, 720),
-(5, 3, 1, TRUE, 900),
-(5, 4, 1, FALSE, 320),
-(6, 1, 1, TRUE, 480),
-(6, 2, 1, TRUE, 720),
-(6, 3, 1, TRUE, 900),
-(6, 4, 1, TRUE, 1080),
-(6, 5, 1, TRUE, 840);
+-- Insert categories
+INSERT INTO categories (name, description, isActive) VALUES
+('Web Development', 'Learn modern web development technologies and frameworks', TRUE),
+('Mobile Development', 'Build mobile applications for iOS and Android', TRUE),
+('Data Science', 'Master data analysis, machine learning, and AI', TRUE),
+('Design', 'User interface and user experience design courses', TRUE),
+('DevOps', 'Deployment, infrastructure, and automation tools', TRUE),
+('Business', 'Entrepreneurship, marketing, and business strategy', TRUE);
 
--- Insert sample payments
-INSERT INTO payments (user_id, course_id, amount, status, payment_method, transaction_id, gateway, processed_at) VALUES
-(4, 1, 89.99, 'completed', 'credit_card', 'txn_1234567890', 'stripe', NOW()),
-(4, 2, 129.99, 'completed', 'paypal', 'pp_9876543210', 'paypal', NOW()),
-(5, 1, 89.99, 'completed', 'credit_card', 'txn_1234567891', 'stripe', NOW()),
-(5, 3, 149.99, 'completed', 'credit_card', 'txn_1234567892', 'stripe', NOW()),
-(6, 1, 89.99, 'completed', 'credit_card', 'txn_1234567893', 'stripe', NOW()),
-(6, 4, 99.99, 'completed', 'paypal', 'pp_9876543211', 'paypal', NOW());
+-- Insert courses
+INSERT INTO courses (title, description, categoryId, thumbnailUrl, isPremium, isActive) VALUES
+-- Web Development Courses
+('Complete JavaScript Mastery', 'Master JavaScript from basics to advanced concepts including ES6+, async programming, and modern frameworks', 1, 'https://example.com/thumbnails/javascript.jpg', TRUE, TRUE),
+('React.js for Beginners', 'Learn React.js from scratch and build modern web applications with hooks and context', 1, 'https://example.com/thumbnails/react.jpg', TRUE, TRUE),
+('Full Stack Development', 'Complete full-stack development course covering frontend, backend, and database integration', 1, 'https://example.com/thumbnails/fullstack.jpg', TRUE, TRUE),
 
--- Insert sample reviews
-INSERT INTO reviews (user_id, course_id, rating, comment, is_approved) VALUES
-(5, 1, 5, 'Excellent course! Very comprehensive and easy to follow. The instructor explains everything clearly.', TRUE),
-(6, 1, 4, 'Great content and practical examples. Would recommend to anyone starting with JavaScript.', TRUE),
-(4, 1, 5, 'Amazing course structure and pacing. Perfect for beginners!', TRUE),
-(6, 4, 5, 'Best UI/UX course I have taken. Very practical and industry-relevant.', TRUE);
+-- Mobile Development Courses  
+('iOS Development with Swift', 'Build native iOS applications using Swift and Xcode', 2, 'https://example.com/thumbnails/ios.jpg', TRUE, TRUE),
+('React Native Mobile Apps', 'Create cross-platform mobile apps with React Native', 2, 'https://example.com/thumbnails/reactnative.jpg', TRUE, TRUE),
 
--- Insert sample coupons
-INSERT INTO coupons (code, type, value, minimum_amount, usage_limit, valid_from, valid_until) VALUES
-('WELCOME20', 'percentage', 20.00, 50.00, 100, NOW(), DATE_ADD(NOW(), INTERVAL 30 DAY)),
-('STUDENT50', 'fixed', 50.00, 100.00, 50, NOW(), DATE_ADD(NOW(), INTERVAL 60 DAY)),
-('BLACKFRIDAY', 'percentage', 40.00, 0.00, 1000, NOW(), DATE_ADD(NOW(), INTERVAL 7 DAY));
+-- Data Science Courses
+('Python for Data Science', 'Complete data science course using Python, pandas, and machine learning', 3, 'https://example.com/thumbnails/datascience.jpg', TRUE, TRUE),
+('Machine Learning Fundamentals', 'Learn machine learning algorithms and implement them from scratch', 3, 'https://example.com/thumbnails/ml.jpg', TRUE, TRUE),
 
--- Update course statistics
-UPDATE courses SET 
-    total_lessons = (SELECT COUNT(*) FROM lessons WHERE course_id = courses.id),
-    total_enrollments = (SELECT COUNT(*) FROM enrollments WHERE course_id = courses.id),
-    average_rating = (SELECT ROUND(AVG(rating), 2) FROM reviews WHERE course_id = courses.id AND is_approved = TRUE),
-    total_reviews = (SELECT COUNT(*) FROM reviews WHERE course_id = courses.id AND is_approved = TRUE);
+-- Design Courses
+('UI/UX Design Masterclass', 'Complete design course covering user research, wireframing, and prototyping', 4, 'https://example.com/thumbnails/uiux.jpg', TRUE, TRUE),
+('Adobe Creative Suite', 'Master Photoshop, Illustrator, and other Adobe tools for design', 4, 'https://example.com/thumbnails/adobe.jpg', TRUE, TRUE),
 
--- Update enrollment completion status
-UPDATE enrollments SET 
-    status = 'completed',
-    completed_at = NOW()
-WHERE progress = 100.00; 
+-- Free introductory course
+('Introduction to Programming', 'Free introductory course to get started with programming concepts', 1, 'https://example.com/thumbnails/intro.jpg', FALSE, TRUE);
+
+-- Insert lessons for JavaScript course
+INSERT INTO lessons (courseId, title, content, videoUrl, duration, lessonOrder, isPremium) VALUES
+-- JavaScript Course (Course ID: 1)
+(1, 'Introduction to JavaScript', 'Learn what JavaScript is and why it''s important for web development', 'https://example.com/videos/js-intro.mp4', 900, 1, TRUE),
+(1, 'Variables and Data Types', 'Understanding variables, strings, numbers, and boolean values in JavaScript', 'https://example.com/videos/js-variables.mp4', 1200, 2, TRUE),
+(1, 'Functions and Scope', 'Master JavaScript functions, parameters, and variable scope', 'https://example.com/videos/js-functions.mp4', 1800, 3, TRUE),
+(1, 'DOM Manipulation', 'Learn how to interact with HTML elements using JavaScript', 'https://example.com/videos/js-dom.mp4', 2400, 4, TRUE),
+(1, 'Async JavaScript & Promises', 'Understanding asynchronous programming and promises', 'https://example.com/videos/js-async.mp4', 2700, 5, TRUE),
+
+-- React Course (Course ID: 2)
+(2, 'React Introduction', 'Getting started with React.js and understanding components', 'https://example.com/videos/react-intro.mp4', 1200, 1, TRUE),
+(2, 'JSX and Components', 'Learn JSX syntax and how to create reusable components', 'https://example.com/videos/react-jsx.mp4', 1500, 2, TRUE),
+(2, 'State and Props', 'Managing component state and passing data through props', 'https://example.com/videos/react-state.mp4', 1800, 3, TRUE),
+(2, 'React Hooks', 'Modern React development with hooks like useState and useEffect', 'https://example.com/videos/react-hooks.mp4', 2100, 4, TRUE),
+
+-- Free course lessons (Course ID: 10)
+(10, 'What is Programming?', 'Introduction to programming concepts and logic', 'https://example.com/videos/intro-programming.mp4', 600, 1, FALSE),
+(10, 'Your First Code', 'Write your first simple program', 'https://example.com/videos/first-code.mp4', 900, 2, FALSE);
+
+-- Insert sample payment transactions
+INSERT INTO payment_transaction (userId, packageId, amount, status, qrCodeData, referenceNumber, expiresAt, confirmedById, confirmedAt, notes) VALUES
+-- Confirmed payments
+(5, 1, 9.99, 'confirmed', 
+'{"bank":"Bank ABC","account":"1234567890","amount":9.99,"reference":"PAY001"}', 
+'PAY001REF2024', 
+DATE_ADD(NOW(), INTERVAL 24 HOUR), 
+1, 
+NOW(), 
+'Payment confirmed by admin - Monthly subscription activated'),
+
+(6, 2, 71.99, 'confirmed', 
+'{"bank":"Bank XYZ","account":"0987654321","amount":71.99,"reference":"PAY002"}', 
+'PAY002REF2024', 
+DATE_ADD(NOW(), INTERVAL 24 HOUR), 
+1, 
+DATE_SUB(NOW(), INTERVAL 2 HOUR), 
+'Payment confirmed by admin - Annual subscription activated'),
+
+(7, 3, 199.99, 'confirmed', 
+'{"bank":"Bank DEF","account":"1122334455","amount":199.99,"reference":"PAY003"}', 
+'PAY003REF2024', 
+DATE_ADD(NOW(), INTERVAL 24 HOUR), 
+2, 
+DATE_SUB(NOW(), INTERVAL 1 DAY), 
+'Payment confirmed by content manager - Lifetime subscription activated'),
+
+-- Pending payments
+(3, 1, 9.99, 'pending', 
+'{"bank":"Bank GHI","account":"5566778899","amount":9.99,"reference":"PAY004"}', 
+'PAY004REF2024', 
+DATE_ADD(NOW(), INTERVAL 20 HOUR), 
+NULL, 
+NULL, 
+NULL),
+
+(4, 2, 71.99, 'pending', 
+'{"bank":"Bank JKL","account":"9988776655","amount":71.99,"reference":"PAY005"}', 
+'PAY005REF2024', 
+DATE_ADD(NOW(), INTERVAL 18 HOUR), 
+NULL, 
+NULL, 
+NULL),
+
+-- Expired payment
+(3, 1, 9.99, 'expired', 
+'{"bank":"Bank MNO","account":"1357924680","amount":9.99,"reference":"PAY006"}', 
+'PAY006REF2024', 
+DATE_SUB(NOW(), INTERVAL 2 HOUR), 
+NULL, 
+NULL, 
+'Payment expired - QR code timed out');
+
+-- Display seeded data summary
+SELECT 'SEEDING COMPLETED' as status;
+SELECT 'Users created:' as info, COUNT(*) as count FROM users;
+SELECT 'Packages created:' as info, COUNT(*) as count FROM package;
+SELECT 'Categories created:' as info, COUNT(*) as count FROM categories;
+SELECT 'Courses created:' as info, COUNT(*) as count FROM courses;
+SELECT 'Lessons created:' as info, COUNT(*) as count FROM lessons;
+SELECT 'Payment transactions created:' as info, COUNT(*) as count FROM payment_transaction;
+
+-- Show premium users
+SELECT 
+    fullName, 
+    email, 
+    role,
+    isPremium, 
+    premiumExpiryDate, 
+    currentPackage 
+FROM users 
+WHERE role = 'user' 
+ORDER BY isPremium DESC, fullName;
+
+-- Show payment transaction status summary
+SELECT 
+    status, 
+    COUNT(*) as count, 
+    SUM(amount) as total_amount 
+FROM payment_transaction 
+GROUP BY status; 

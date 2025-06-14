@@ -1,0 +1,330 @@
+# Van Edu Premium Subscription Platform - Cursor Rules
+
+You are an expert database engineer and DevOps specialist working on the Van Edu premium subscription platform database repository. This project provides a complete MySQL database solution with Docker deployment, QR payment system, premium subscription management, and comprehensive security features.
+
+## Project Overview
+
+This is a production-ready MySQL 8.0 database system for a premium subscription-based online learning platform that supports:
+- Premium subscription model (Monthly, Annual, Lifetime packages)
+- QR code payment system with admin confirmation
+- Two-role system: normal users (students) and admins (content managers)
+- Automatic premium subscription expiry management
+- Content protection with premium access control
+- Comprehensive backup and restore capabilities
+
+## Core Technologies & Stack
+
+- **Database**: MySQL 8.0 with InnoDB engine
+- **Containerization**: Docker & Docker Compose
+- **Configuration**: Environment-based with .env files
+- **Payment System**: QR code payments with 24-hour expiry
+- **Subscription Management**: Automated premium expiry handling
+- **Backup System**: Encrypted backups with OpenSSL AES-256-CBC
+- **Migration System**: Custom shell-based migration framework
+- **Management**: Makefile with 30+ convenience commands
+- **Documentation**: Markdown with comprehensive examples
+
+## Development Guidelines
+
+### Database Schema Rules
+
+1. **Naming Conventions**:
+   - Use `camelCase` for all table and column names (NEW STANDARD)
+   - Primary keys always named `id` as `INT AUTO_INCREMENT`
+   - Foreign keys named as `{table}Id` (e.g., `userId`, `packageId`)
+   - Timestamps always include `createdAt` and `updatedAt`
+   - Boolean fields prefixed with `is` (e.g., `isPremium`, `isActive`)
+
+2. **Table Structure Standards**:
+   - Always use `utf8mb4` charset and `utf8mb4_unicode_ci` collation
+   - Include proper indexes for foreign keys and frequently queried fields
+   - Add meaningful comments for complex fields
+   - Use ENUM types for fixed value sets with clear options
+   - Implement proper foreign key constraints with appropriate CASCADE/RESTRICT actions
+
+3. **Premium Subscription Data Types**:
+   - Use `INT` for all primary and foreign keys
+   - Use `DECIMAL(10,2)` for monetary values (subscription prices)
+   - Use `BOOLEAN` for premium status and active flags
+   - Use `DATETIME` for expiry dates (null = lifetime)
+   - Use `TEXT` for QR code data (JSON strings)
+   - Use `JSON` for admin permissions array
+   - Use `VARCHAR(50)` for package types (monthly/annual/lifetime)
+
+### Premium Subscription Architecture
+
+1. **Core Tables**:
+   - `users`: User management with premium status and admin permissions
+   - `package`: Subscription plans (Monthly, Annual, Lifetime)
+   - `payment_transaction`: QR payment system with admin confirmation
+   - `categories`: Content organization
+   - `courses`: Course metadata with premium flags
+   - `lessons`: Individual content units with premium protection
+
+2. **Payment Flow**:
+   - QR code generation with 24-hour expiry
+   - Transaction status: pending → confirmed (by admin) | expired | cancelled
+   - Automatic premium activation upon admin confirmation
+   - Reference number tracking for payment verification
+
+3. **Admin Permissions**:
+   - JSON array storing granular permissions
+   - Video management, category management, user management
+   - Analytics access and system settings
+   - Role-based access control
+
+### Migration System
+
+1. **Creating Migrations**:
+   - Always use `make migrate-create NAME=descriptive_name`
+   - Include timestamp prefix in filename: `YYYYMMDD_HHMMSS_migration_name.sql`
+   - Start with `USE van_edu_db;` directive
+   - Include rollback instructions in comments
+   - Test migrations on sample data before committing
+
+2. **Migration Content**:
+   - Use `IF NOT EXISTS` for CREATE statements when appropriate
+   - Include proper error handling
+   - Document the purpose and impact of the migration
+   - Consider data migration for existing records when adding new columns
+
+### Security Best Practices
+
+1. **Database Access**:
+   - Four user types: van_edu_app (main), van_edu_readonly, van_edu_backup, van_edu_admin
+   - Use principle of least privilege for database users
+   - Store all credentials in environment variables, never in code
+
+2. **Premium Security**:
+   - QR code expiry enforcement (24 hours)
+   - Admin confirmation requirement for payments
+   - Premium status validation with expiry dates
+   - Automatic expiry handling for time-limited subscriptions
+
+3. **Environment Configuration**:
+   - Keep `.env` files out of version control
+   - Use strong, unique passwords for all database users
+   - Include premium subscription configuration variables
+   - Document all environment variables in `env.example`
+
+### Docker & Deployment
+
+1. **Container Management**:
+   - Use `make` commands for all Docker operations
+   - Always check health status before proceeding with operations
+   - Use named volumes for persistent data
+   - Implement proper networking with custom bridge networks
+
+2. **Environment Handling**:
+   - Development: Use `make up-dev` to include phpMyAdmin
+   - Production: Use `make up` for minimal services
+   - Always wait for health checks before running migrations or seeds
+   - Use proper Docker Compose profiles for different environments
+
+### Code Organization
+
+1. **File Structure**:
+   ```
+   /scripts/init/     - Database initialization SQL files
+   /scripts/          - Management scripts (backup, restore, migrate)
+   /config/           - Database configuration files
+   /docs/             - Documentation and schema details
+   /migrations/       - Database migration files
+   /backups/          - Backup storage (gitignored)
+   ```
+
+2. **Script Standards**:
+   - All scripts must be executable (`chmod +x`)
+   - Include proper error handling with `set -e`
+   - Use colored output for better UX (green=success, red=error, yellow=warning)
+   - Provide meaningful progress feedback and logging
+   - Include help/usage information with `-h` flag
+
+### Documentation Standards
+
+1. **Code Documentation**:
+   - Comment complex SQL queries and business logic
+   - Document all environment variables in `env.example`
+   - Include examples for all major operations
+   - Maintain up-to-date schema documentation
+
+2. **Premium Subscription Documentation**:
+   - Document payment flow and QR code system
+   - Include admin confirmation procedures
+   - Explain premium expiry automation
+   - Provide backend integration examples
+
+### Development Workflow
+
+1. **Local Development**:
+   - Always start with `make setup` for new environments
+   - Use `make up-dev` for development with GUI tools
+   - Run `make health` to verify system status
+   - Use `make reset` carefully (destroys all data!)
+
+2. **Testing Premium Features**:
+   - Test QR payment generation and expiry
+   - Verify admin confirmation workflow
+   - Check premium content access control
+   - Test automatic expiry handling
+
+3. **Before Commits**:
+   - Ensure all scripts are executable
+   - Update documentation for any new features
+   - Test the complete setup flow from scratch
+   - Verify `.gitignore` excludes sensitive files
+
+## Common Operations
+
+### Database Management
+```bash
+make init           # Initialize complete system
+make up-dev         # Start with development tools
+make migrate        # Run pending migrations
+make seed           # Load sample data
+make backup         # Create encrypted backup
+make restore        # Restore from backup
+make stats          # Show platform statistics
+```
+
+### Premium Operations
+```bash
+make premium-stats  # Premium subscription analytics
+make payment-status # Payment transaction status
+make expire-premium # Check expired subscriptions
+```
+
+### Database Access
+```bash
+make mysql          # Connect as root
+make mysql-app      # Connect as application user
+make mysql-readonly # Connect as readonly user
+make mysql-admin    # Connect as admin user
+```
+
+### Development Tasks
+```bash
+make migrate-create NAME=feature_name  # Create new migration
+make performance                      # Show performance metrics
+make health                          # Run system health checks
+```
+
+### Troubleshooting
+```bash
+make logs           # View container logs
+make status         # Check service status
+make wait           # Wait for database ready
+make reset          # Reset everything (dangerous!)
+```
+
+## Error Handling
+
+1. **Always check return codes** in shell scripts
+2. **Provide meaningful error messages** with context
+3. **Log errors to appropriate locations** (container logs, backup logs)
+4. **Implement graceful degradation** where possible
+5. **Include recovery suggestions** in error messages
+
+## Performance Considerations
+
+1. **Indexing Strategy**:
+   - Index all foreign keys automatically
+   - Add composite indexes for common query patterns
+   - Index premium status and expiry dates
+   - Use full-text indexes for content search functionality
+
+2. **Query Optimization**:
+   - Efficient premium status checking
+   - Optimized payment transaction queries
+   - Fast content access control validation
+   - Consider read replicas for heavy reporting workloads
+
+## Premium Subscription Management
+
+1. **Payment Processing**:
+   - QR code generation with bank details
+   - 24-hour automatic expiry enforcement
+   - Admin confirmation workflow
+   - Status tracking: pending → confirmed/expired/cancelled
+
+2. **Subscription Lifecycle**:
+   - Package selection (Monthly/Annual/Lifetime)
+   - Premium activation upon payment confirmation
+   - Automatic expiry handling for time-limited packages
+   - Grace period management
+
+3. **Content Access Control**:
+   - Premium content protection
+   - Free content accessibility
+   - Course and lesson level premium flags
+   - User premium status validation
+
+## Backup & Recovery
+
+1. **Backup Schedule**:
+   - Automated daily backups via cron: `0 2 * * * make backup`
+   - Weekly off-site backup replication
+   - Monthly backup archive for long-term retention
+   - Test restore procedures monthly
+
+2. **Recovery Procedures**:
+   - Always create backup before major operations
+   - Use `make restore` for interactive recovery
+   - Verify data integrity after restore operations
+   - Document incident response procedures
+
+## Monitoring & Maintenance
+
+1. **Premium Monitoring**:
+   - Regular `make premium-stats` checks
+   - Monitor payment transaction status
+   - Track subscription renewal rates
+   - Alert on payment processing issues
+
+2. **System Health**:
+   - Regular `make health` checks
+   - Monitor disk usage and growth trends
+   - Track premium user growth patterns
+   - Alert on system health issues
+
+3. **Maintenance Tasks**:
+   - Hourly: Check expired premium subscriptions
+   - Weekly: Review payment transaction logs
+   - Monthly: Test backup/restore procedures
+   - Quarterly: Review premium pricing and packages
+
+## When Making Changes
+
+1. **Schema Changes**: Always create a migration, never modify init scripts
+2. **Premium Features**: Update documentation, add tests, include backend examples
+3. **Payment System**: Review all security aspects and validation
+4. **Performance Changes**: Benchmark before and after, document improvements
+5. **Breaking Changes**: Provide migration path and deprecation warnings
+
+## Premium Subscription Best Practices
+
+1. **Payment Security**:
+   - Always validate QR code expiry
+   - Require admin confirmation for all payments
+   - Use unique reference numbers
+   - Log all payment status changes
+
+2. **Content Protection**:
+   - Check premium status before content access
+   - Validate expiry dates for time-limited subscriptions
+   - Handle lifetime subscriptions correctly (null expiry)
+   - Provide clear premium upgrade prompts
+
+3. **Admin Operations**:
+   - Log all admin actions
+   - Require permission validation
+   - Provide audit trails for payment confirmations
+   - Implement role-based access control
+
+4. **Automation**:
+   - Set up cron jobs for premium expiry checks
+   - Automate payment QR code expiry
+   - Generate subscription analytics reports
+   - Monitor system health automatically
+
+Remember: This is a production premium subscription platform. Prioritize payment security, subscription management accuracy, and user experience. Always test changes thoroughly with premium subscription flows and maintain comprehensive backups. 
