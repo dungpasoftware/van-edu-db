@@ -245,6 +245,38 @@ test-connections: ## Test all database user connections
 	@docker exec van-edu-postgres psql -U van_edu_backup -d $(POSTGRES_DB) -c "SELECT 'van_edu_backup: ✅ Connected' as status;" 2>/dev/null || echo "van_edu_backup: ❌ Failed"
 	@echo "🎯 Connection tests completed"
 
+fix-permissions: ## Fix permissions for TypeORM schema synchronization
+	@echo "🔧 Fixing permissions for TypeORM schema synchronization..."
+	@echo "Granting table ownership permissions to van_edu_app..."
+	@docker exec van-edu-postgres psql -U van_edu_app -d $(POSTGRES_DB) -c "\
+		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO van_edu_app; \
+		GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO van_edu_app; \
+		ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO van_edu_app; \
+		ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO van_edu_app;"
+	@echo "Granting schema modification permissions to van_edu_admin..."
+	@docker exec van-edu-postgres psql -U van_edu_app -d $(POSTGRES_DB) -c "\
+		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO van_edu_admin; \
+		GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO van_edu_admin; \
+		ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO van_edu_admin; \
+		ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO van_edu_admin;"
+	@echo "✅ Permissions fixed for TypeORM schema synchronization"
+
+grant-superuser: ## Grant superuser privileges to van_edu_admin (for TypeORM)
+	@echo "🔧 Granting superuser privileges to van_edu_admin..."
+	@docker exec van-edu-postgres psql -U van_edu_app -d $(POSTGRES_DB) -c "ALTER USER van_edu_admin WITH SUPERUSER;"
+	@echo "✅ van_edu_admin now has superuser privileges"
+
+revoke-superuser: ## Revoke superuser privileges from van_edu_admin
+	@echo "🔧 Revoking superuser privileges from van_edu_admin..."
+	@docker exec van-edu-postgres psql -U van_edu_app -d $(POSTGRES_DB) -c "ALTER USER van_edu_admin WITH NOSUPERUSER;"
+	@echo "✅ van_edu_admin superuser privileges revoked"
+
+show-constraints: ## Show all foreign key constraints
+	@echo "Current Foreign Key Constraints:"
+	@docker exec van-edu-postgres psql -U van_edu_app -d $(POSTGRES_DB) -c "\
+		SELECT conname, conrelid::regclass AS table_name, confrelid::regclass AS referenced_table \
+		FROM pg_constraint WHERE contype = 'f' ORDER BY conrelid::regclass;"
+
 # Premium Operations
 premium-stats: ## Show premium subscription statistics
 	@echo "Premium Subscription Statistics:"
