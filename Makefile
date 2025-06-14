@@ -101,7 +101,7 @@ list-backups: ## List available backups
 
 # Database Access
 psql: ## Connect to PostgreSQL as superuser
-	docker exec -it van-edu-postgres psql -U postgres
+	docker exec -it van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
 
 psql-app: ## Connect to PostgreSQL as application user
 	docker exec -it van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
@@ -163,18 +163,87 @@ performance: ## Show performance metrics
 		UNION ALL SELECT 'Cache Hit Ratio', ROUND(100.0 * sum(blks_hit) / (sum(blks_hit) + sum(blks_read)), 2)::text || '%' FROM pg_stat_database WHERE datname = '$(POSTGRES_DB)';"
 
 # Security Operations
-create-users: ## Create additional database users
-	@echo "Creating database users..."
-	@docker exec van-edu-postgres psql -U postgres -d $(POSTGRES_DB) < scripts/init/02-create-user.sql
-	@echo "✅ Database users created"
+create-users: ## Create additional database users with proper permissions
+	@echo "🔧 Creating database users..."
+	@echo "Creating van_edu_readonly user..."
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE USER van_edu_readonly WITH PASSWORD '$(DB_READONLY_PASSWORD)';" 2>/dev/null || echo "User van_edu_readonly already exists"
+	@echo "Creating van_edu_backup user..."
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE USER van_edu_backup WITH PASSWORD '$(DB_BACKUP_PASSWORD)';" 2>/dev/null || echo "User van_edu_backup already exists"
+	@echo "Creating van_edu_admin user..."
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE USER van_edu_admin WITH PASSWORD '$(DB_ADMIN_PASSWORD)';" 2>/dev/null || echo "User van_edu_admin already exists"
+	@echo "Setting up permissions for van_edu_readonly..."
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "GRANT CONNECT ON DATABASE $(POSTGRES_DB) TO van_edu_readonly;"
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "GRANT USAGE ON SCHEMA public TO van_edu_readonly;"
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "GRANT SELECT ON ALL TABLES IN SCHEMA public TO van_edu_readonly;"
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO van_edu_readonly;"
+	@echo "Setting up permissions for van_edu_backup..."
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "GRANT CONNECT ON DATABASE $(POSTGRES_DB) TO van_edu_backup;"
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "GRANT USAGE ON SCHEMA public TO van_edu_backup;"
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "GRANT SELECT ON ALL TABLES IN SCHEMA public TO van_edu_backup;"
+	@echo "Setting up permissions for van_edu_admin..."
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "GRANT CONNECT ON DATABASE $(POSTGRES_DB) TO van_edu_admin;"
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "GRANT USAGE ON SCHEMA public TO van_edu_admin;"
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO van_edu_admin;"
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO van_edu_admin;"
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO van_edu_admin;"
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO van_edu_admin;"
+	@echo "✅ Database users created and configured successfully"
 
 check-permissions: ## Check user permissions
 	@echo "Database User Permissions:"
-	@docker exec van-edu-postgres psql -U postgres -d $(POSTGRES_DB) -c "\
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\
 		SELECT usename as user, \
 		       CASE WHEN usesuper THEN 'Yes' ELSE 'No' END as superuser, \
 		       CASE WHEN usecreatedb THEN 'Yes' ELSE 'No' END as create_db \
 		FROM pg_user WHERE usename LIKE 'van_edu_%' ORDER BY usename;"
+
+list-users: ## List all database users
+	@echo "All Database Users:"
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\du"
+
+drop-users: ## Drop additional database users (WARNING: Use with caution)
+	@echo "⚠️  WARNING: This will drop van_edu_readonly, van_edu_backup, and van_edu_admin users!"
+	@read -p "Are you sure? (yes/no): " confirm && [ "$$confirm" = "yes" ] || exit 1
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DROP USER IF EXISTS van_edu_readonly;" 2>/dev/null || true
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DROP USER IF EXISTS van_edu_backup;" 2>/dev/null || true
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DROP USER IF EXISTS van_edu_admin;" 2>/dev/null || true
+	@echo "✅ Additional users dropped"
+
+setup-production: ## Complete production setup (users, permissions, security)
+	@echo "🚀 Setting up production environment..."
+	@make create-users
+	@make check-permissions
+	@echo "🔒 Checking security configuration..."
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\
+		SELECT 'SSL Status' as setting, \
+		       CASE WHEN setting = 'on' THEN '✅ Enabled' ELSE '⚠️ Disabled' END as value \
+		FROM pg_settings WHERE name = 'ssl' \
+		UNION ALL \
+		SELECT 'Password Encryption', \
+		       CASE WHEN setting = 'scram-sha-256' THEN '✅ SCRAM-SHA-256' ELSE '⚠️ ' || setting END \
+		FROM pg_settings WHERE name = 'password_encryption';"
+	@echo "📊 Production setup completed!"
+	@echo ""
+	@echo "🔗 Connection Details for Production:"
+	@echo "   Host: your-server-ip"
+	@echo "   Port: 5432"
+	@echo "   Database: $(POSTGRES_DB)"
+	@echo "   Main User: $(POSTGRES_USER)"
+	@echo "   Readonly User: van_edu_readonly"
+	@echo "   Admin User: van_edu_admin"
+	@echo "   Backup User: van_edu_backup"
+
+test-connections: ## Test all database user connections
+	@echo "🔍 Testing database connections..."
+	@echo "Testing van_edu_app connection..."
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "SELECT 'van_edu_app: ✅ Connected' as status;" 2>/dev/null || echo "van_edu_app: ❌ Failed"
+	@echo "Testing van_edu_readonly connection..."
+	@docker exec van-edu-postgres psql -U van_edu_readonly -d $(POSTGRES_DB) -c "SELECT 'van_edu_readonly: ✅ Connected' as status;" 2>/dev/null || echo "van_edu_readonly: ❌ Failed"
+	@echo "Testing van_edu_admin connection..."
+	@docker exec van-edu-postgres psql -U van_edu_admin -d $(POSTGRES_DB) -c "SELECT 'van_edu_admin: ✅ Connected' as status;" 2>/dev/null || echo "van_edu_admin: ❌ Failed"
+	@echo "Testing van_edu_backup connection..."
+	@docker exec van-edu-postgres psql -U van_edu_backup -d $(POSTGRES_DB) -c "SELECT 'van_edu_backup: ✅ Connected' as status;" 2>/dev/null || echo "van_edu_backup: ❌ Failed"
+	@echo "🎯 Connection tests completed"
 
 # Premium Operations
 premium-stats: ## Show premium subscription statistics
@@ -212,6 +281,18 @@ setup: ## Initial setup (copy env file, make scripts executable)
 	@echo "Next steps:"
 	@echo "1. Edit .env file with your configuration"
 	@echo "2. Run 'make init' to initialize the database"
+
+deploy: ## Full production deployment
+	@chmod +x scripts/deploy.sh
+	@./scripts/deploy.sh deploy
+
+deploy-users: ## Deploy users and permissions only
+	@chmod +x scripts/deploy.sh
+	@./scripts/deploy.sh users-only
+
+deploy-test: ## Test deployment connections
+	@chmod +x scripts/deploy.sh
+	@./scripts/deploy.sh test
 
 # Health Checks
 health: ## Run health checks
