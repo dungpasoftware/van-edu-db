@@ -1,6 +1,6 @@
 # Van Edu Premium Subscription Platform Database
 
-A complete MySQL database solution for Van Edu's premium subscription-based online learning platform. This system supports QR code payments with admin confirmation, automatic premium subscription management, and role-based access control.
+A complete PostgreSQL database solution for Van Edu's premium subscription-based online learning platform. This system supports QR code payments with admin confirmation, automatic premium subscription management, and role-based access control.
 
 ## 🎯 Platform Overview
 
@@ -41,8 +41,8 @@ make up-dev
 ```
 
 **🌐 Access Points:**
-- **phpMyAdmin**: http://localhost:8080
-- **MySQL Port**: 3306 (for backend connection)
+- **pgAdmin**: http://localhost:8080
+- **PostgreSQL Port**: 5432 (for backend connection)
 
 ## 📋 Features
 
@@ -55,7 +55,7 @@ make up-dev
 ### ✅ User Management
 - Two-role system: `user` and `admin`
 - Premium status tracking with expiry dates
-- Admin permissions system (JSON-based)
+- Admin permissions system (JSONB-based)
 - bcrypt password hashing
 
 ### ✅ Content Management
@@ -73,8 +73,9 @@ make up-dev
 ### ✅ Security & Performance
 - Role-based database users
 - Encrypted backups (AES-256-CBC)
-- Optimized MySQL configuration
+- Optimized PostgreSQL configuration
 - Comprehensive indexing strategy
+- Full-text search capabilities
 
 ### ✅ Development Tools
 - Docker containerization
@@ -89,45 +90,45 @@ make up-dev
 
 #### `users` - User Management
 ```sql
-- id (INT, PRIMARY KEY)
-- fullName (VARCHAR(255))
+- id (SERIAL, PRIMARY KEY)
+- full_name (VARCHAR(255))
 - email (VARCHAR(255), UNIQUE)
 - password (VARCHAR(255)) -- bcrypt hashed
 - phone, address, age (OPTIONAL)
-- role (ENUM: 'user', 'admin')
-- isPremium (BOOLEAN) -- Premium status for users
-- premiumExpiryDate (DATETIME) -- null for lifetime
-- currentPackage (VARCHAR(50)) -- monthly/annual/lifetime
-- permissions (JSON) -- Admin permissions array
-- createdAt, updatedAt (DATETIME)
+- role (VARCHAR(20)) -- 'user' or 'admin'
+- is_premium (BOOLEAN) -- Premium status for users
+- premium_expiry_date (TIMESTAMP) -- null for lifetime
+- current_package (VARCHAR(50)) -- monthly/annual/lifetime
+- permissions (JSONB) -- Admin permissions array
+- created_at, updated_at (TIMESTAMP)
 ```
 
 #### `package` - Subscription Plans
 ```sql
-- id (INT, PRIMARY KEY)
+- id (SERIAL, PRIMARY KEY)
 - name (VARCHAR(255)) -- "Monthly Premium"
 - type (VARCHAR(50), UNIQUE) -- monthly/annual/lifetime
 - description (TEXT)
 - price (DECIMAL(10,2))
-- durationDays (INT) -- null for lifetime
-- isActive (BOOLEAN)
-- createdAt, updatedAt (DATETIME)
+- duration_days (INTEGER) -- null for lifetime
+- is_active (BOOLEAN)
+- created_at, updated_at (TIMESTAMP)
 ```
 
 #### `payment_transaction` - QR Payment System
 ```sql
-- id (INT, PRIMARY KEY)
-- userId (INT, FK -> users.id)
-- packageId (INT, FK -> package.id)
+- id (SERIAL, PRIMARY KEY)
+- user_id (INTEGER, FK -> users.id)
+- package_id (INTEGER, FK -> package.id)
 - amount (DECIMAL(10,2))
-- status (ENUM: 'pending', 'confirmed', 'expired', 'cancelled')
-- qrCodeData (TEXT) -- JSON payment data
-- referenceNumber (VARCHAR(255), UNIQUE)
-- expiresAt (DATETIME) -- 24-hour expiry
-- confirmedById (INT, FK -> users.id) -- Admin who confirmed
-- confirmedAt (DATETIME)
+- status (VARCHAR(20)) -- 'pending', 'confirmed', 'expired', 'cancelled'
+- qr_code_data (TEXT) -- JSON payment data
+- reference_number (VARCHAR(255), UNIQUE)
+- expires_at (TIMESTAMP) -- 24-hour expiry
+- confirmed_by_id (INTEGER, FK -> users.id) -- Admin who confirmed
+- confirmed_at (TIMESTAMP)
 - notes (TEXT) -- Admin notes
-- createdAt, updatedAt (DATETIME)
+- created_at, updated_at (TIMESTAMP)
 ```
 
 #### Content Tables
@@ -140,21 +141,28 @@ make up-dev
 ```
 users (1) ----< payment_transaction (M)
 package (1) ----< payment_transaction (M)
-users (admin) (1) ----< payment_transaction.confirmedById (M)
+users (admin) (1) ----< payment_transaction.confirmed_by_id (M)
 categories (1) ----< courses (M)
 courses (1) ----< lessons (M)
 ```
+
+### PostgreSQL Features
+
+- **JSONB Support**: Efficient storage and querying of admin permissions
+- **Full-Text Search**: GIN indexes for course and lesson content search
+- **Triggers**: Automatic `updated_at` timestamp updates
+- **Functions**: Premium access checking and expiry management
+- **Views**: Convenient access to premium users and payment summaries
 
 ## 🔧 Configuration
 
 ### Environment Variables (.env)
 
 ```bash
-# Database Configuration
-MYSQL_ROOT_PASSWORD=van_edu_root_2024!
-MYSQL_DATABASE=van_edu_db
-MYSQL_USER=van_edu_app
-MYSQL_PASSWORD=van_edu_app_2024!
+# PostgreSQL Configuration
+POSTGRES_DB=van_edu_db
+POSTGRES_USER=van_edu_app
+POSTGRES_PASSWORD=van_edu_app_2024!
 
 # Additional Database Users
 DB_READONLY_USER=van_edu_readonly
@@ -163,6 +171,10 @@ DB_BACKUP_USER=van_edu_backup
 DB_BACKUP_PASSWORD=backup_secure_2024!
 DB_ADMIN_USER=van_edu_admin
 DB_ADMIN_PASSWORD=admin_secure_2024!
+
+# pgAdmin Configuration
+PGADMIN_EMAIL=admin@vanedu.com
+PGADMIN_PASSWORD=admin123
 
 # Premium Subscription Configuration
 PAYMENT_QR_EXPIRY_HOURS=24
@@ -180,7 +192,7 @@ BACKUP_ENCRYPTION_KEY=your_32_character_encryption_key_here
 ```bash
 # Start services
 make up              # Production mode
-make up-dev          # Development with phpMyAdmin
+make up-dev          # Development with pgAdmin
 
 # Database management
 make migrate         # Run pending migrations
@@ -198,10 +210,10 @@ make expire-premium # Check expired subscriptions
 ### Database Access
 
 ```bash
-make mysql          # Connect as root
-make mysql-app      # Connect as application user
-make mysql-readonly # Connect as readonly user
-make mysql-admin    # Connect as admin user
+make psql           # Connect as superuser
+make psql-app       # Connect as application user
+make psql-readonly  # Connect as readonly user
+make psql-admin     # Connect as admin user
 ```
 
 ### Development Commands
@@ -223,7 +235,7 @@ make reset                           # Reset database (DANGER!)
 - **Analytics**: `view_analytics`
 - **System**: `manage_settings`
 
-### Sample Admin User Permissions
+### Sample Admin User Permissions (JSONB)
 
 ```json
 [
@@ -271,7 +283,7 @@ System generates QR code with:
 - User premium status activated automatically
 
 ### 5. Premium Expiry Management
-- System tracks `premiumExpiryDate`
+- System tracks `premium_expiry_date`
 - Automated expiry checks (configurable interval)
 - Grace period handling
 
@@ -280,34 +292,47 @@ System generates QR code with:
 ### Database Connection (Node.js)
 
 ```javascript
-const mysql = require('mysql2/promise');
+const { Pool } = require('pg');
 
-const connection = await mysql.createConnection({
+const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 3306,
+  port: process.env.DB_PORT || 5432,
   user: process.env.DB_USER || 'van_edu_app',
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME || 'van_edu_db'
+  database: process.env.DB_NAME || 'van_edu_db',
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
 });
 ```
 
 ### Check Premium Status
 
 ```javascript
-// Check if user has premium access
+// Check if user has premium access using PostgreSQL function
 const checkPremiumAccess = async (userId) => {
-  const [rows] = await connection.execute(
-    'SELECT isPremium, premiumExpiryDate FROM users WHERE id = ?',
+  const result = await pool.query(
+    'SELECT check_premium_access($1) as has_access',
     [userId]
   );
   
-  const user = rows[0];
-  if (!user.isPremium) return false;
+  return result.rows[0].has_access;
+};
+
+// Alternative manual check
+const checkPremiumAccessManual = async (userId) => {
+  const result = await pool.query(
+    'SELECT is_premium, premium_expiry_date FROM users WHERE id = $1',
+    [userId]
+  );
+  
+  const user = result.rows[0];
+  if (!user.is_premium) return false;
   
   // Check expiry (null = lifetime)
-  if (user.premiumExpiryDate === null) return true;
+  if (user.premium_expiry_date === null) return true;
   
-  return new Date() < new Date(user.premiumExpiryDate);
+  return new Date() < new Date(user.premium_expiry_date);
 };
 ```
 
@@ -318,14 +343,18 @@ const createPaymentTransaction = async (userId, packageId, qrCodeData) => {
   const referenceNumber = `PAY${Date.now()}REF2024`;
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
   
-  const [result] = await connection.execute(`
+  const result = await pool.query(`
     INSERT INTO payment_transaction 
-    (userId, packageId, amount, qrCodeData, referenceNumber, expiresAt)
-    SELECT ?, ?, p.price, ?, ?, ?
-    FROM package p WHERE p.id = ?
-  `, [userId, packageId, JSON.stringify(qrCodeData), referenceNumber, expiresAt, packageId]);
+    (user_id, package_id, amount, qr_code_data, reference_number, expires_at)
+    SELECT $1, $2, p.price, $3, $4, $5
+    FROM package p WHERE p.id = $2
+    RETURNING id, reference_number
+  `, [userId, packageId, JSON.stringify(qrCodeData), referenceNumber, expiresAt]);
   
-  return { transactionId: result.insertId, referenceNumber };
+  return { 
+    transactionId: result.rows[0].id, 
+    referenceNumber: result.rows[0].reference_number 
+  };
 };
 ```
 
@@ -333,47 +362,67 @@ const createPaymentTransaction = async (userId, packageId, qrCodeData) => {
 
 ```javascript
 const confirmPayment = async (transactionId, adminId, notes) => {
-  // Start transaction
-  await connection.beginTransaction();
+  const client = await pool.connect();
   
   try {
+    await client.query('BEGIN');
+    
     // Update payment status
-    await connection.execute(`
+    await client.query(`
       UPDATE payment_transaction 
-      SET status = 'confirmed', confirmedById = ?, confirmedAt = NOW(), notes = ?
-      WHERE id = ? AND status = 'pending'
+      SET status = 'confirmed', confirmed_by_id = $1, confirmed_at = CURRENT_TIMESTAMP, notes = $2
+      WHERE id = $3 AND status = 'pending'
     `, [adminId, notes, transactionId]);
     
     // Get payment details
-    const [payment] = await connection.execute(`
-      SELECT pt.userId, p.type, p.durationDays 
+    const paymentResult = await client.query(`
+      SELECT pt.user_id, p.type, p.duration_days 
       FROM payment_transaction pt
-      JOIN package p ON pt.packageId = p.id
-      WHERE pt.id = ?
+      JOIN package p ON pt.package_id = p.id
+      WHERE pt.id = $1
     `, [transactionId]);
     
-    if (payment.length === 0) throw new Error('Payment not found');
+    if (paymentResult.rows.length === 0) throw new Error('Payment not found');
     
     // Update user premium status
-    const { userId, type, durationDays } = payment[0];
+    const { user_id, type, duration_days } = paymentResult.rows[0];
     let expiryDate = null;
     
-    if (durationDays !== null) {
-      expiryDate = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000);
+    if (duration_days !== null) {
+      expiryDate = new Date(Date.now() + duration_days * 24 * 60 * 60 * 1000);
     }
     
-    await connection.execute(`
+    await client.query(`
       UPDATE users 
-      SET isPremium = TRUE, premiumExpiryDate = ?, currentPackage = ?
-      WHERE id = ?
-    `, [expiryDate, type, userId]);
+      SET is_premium = TRUE, premium_expiry_date = $1, current_package = $2
+      WHERE id = $3
+    `, [expiryDate, type, user_id]);
     
-    await connection.commit();
+    await client.query('COMMIT');
     return { success: true };
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     throw error;
+  } finally {
+    client.release();
   }
+};
+```
+
+### Search Content with Full-Text Search
+
+```javascript
+// PostgreSQL full-text search for courses
+const searchCourses = async (searchTerm) => {
+  const result = await pool.query(`
+    SELECT id, title, description, 
+           ts_rank(to_tsvector('english', title || ' ' || description), plainto_tsquery('english', $1)) as rank
+    FROM courses 
+    WHERE to_tsvector('english', title || ' ' || description) @@ plainto_tsquery('english', $1)
+    ORDER BY rank DESC, title
+  `, [searchTerm]);
+  
+  return result.rows;
 };
 ```
 
@@ -383,7 +432,7 @@ The system includes comprehensive sample data:
 
 ### Users
 - **2 Admin users** (super admin + content manager)
-- **4 Normal users** (2 free, 2 premium)
+- **5 Normal users** (2 free, 3 premium with different packages)
 - All passwords: `password123` (bcrypt hashed)
 
 ### Packages
@@ -398,174 +447,245 @@ The system includes comprehensive sample data:
 - **1 Free Course**: "Introduction to Programming"
 
 ### Payment Transactions
-- **3 Confirmed payments** (active premium users)
+- **3 Confirmed payments** (different packages)
 - **2 Pending payments** (awaiting admin confirmation)
 - **1 Expired payment** (QR code timeout)
 
-## 🛡️ Security Features
+## 🔒 Security Features
 
-### Database Security
-- **Limited privilege users** for different access levels
-- **Environment-based configuration** (no hardcoded credentials)
-- **Encrypted backups** using AES-256-CBC
-- **Foreign key constraints** for data integrity
+### Database Users & Privileges
 
-### User Security
-- **bcrypt password hashing** (12 rounds)
-- **Role-based access control**
-- **Premium expiry validation**
-- **Admin permission granularity**
+- **van_edu_app**: Application user with CRUD operations
+- **van_edu_readonly**: Read-only access for analytics
+- **van_edu_backup**: Backup operations only
+- **van_edu_admin**: Database administration
 
-### Payment Security
-- **QR code expiry** (24-hour timeout)
-- **Reference number uniqueness**
-- **Admin confirmation requirement**
-- **Transaction status tracking**
+### Backup Security
 
-## 📈 Performance Optimization
+- **AES-256-CBC encryption** for all backups
+- **Gzip compression** to reduce storage
+- **30-day retention** with automatic cleanup
+- **Integrity verification** after backup creation
 
-### Database Indexes
-- **Primary/Foreign keys**: Automatic clustering
-- **User lookups**: email, role, premium status
-- **Payment queries**: status, reference, expiry
-- **Content searches**: premium flags, categories
-- **Full-text search**: course/lesson content
+### Password Security
 
-### MySQL Configuration
-- **InnoDB engine** for ACID compliance
-- **UTF8MB4 charset** for international support
-- **Optimized buffer pools** for performance
-- **Query cache enabled** for repeated queries
+- **bcrypt hashing** for all user passwords
+- **SCRAM-SHA-256** for PostgreSQL authentication
+- **Environment-based** configuration (no hardcoded secrets)
 
-## 🔧 Maintenance
+## 📈 Performance Features
 
-### Backup & Recovery
+### PostgreSQL Optimizations
 
-```bash
-# Automated backups (recommended cron job)
-0 2 * * * cd /path/to/van-edu-db && make backup
+- **Shared buffers**: 256MB for caching
+- **Work memory**: 4MB for query operations
+- **Effective cache size**: 1GB assumption
+- **WAL configuration**: Optimized for performance and safety
 
-# Restore operations
-make restore           # Interactive restore
-make restore-force     # Latest backup restore
-make list-backups     # Show available backups
-```
+### Indexing Strategy
 
-### Health Monitoring
+- **Primary keys**: SERIAL with automatic indexing
+- **Foreign keys**: Indexed for join performance
+- **Search fields**: GIN indexes for full-text search
+- **Query patterns**: Composite indexes for common queries
+
+### Monitoring
 
 ```bash
-# System health
-make health           # Complete health check
-make status          # Service status
-make performance     # Performance metrics
+# Performance metrics
+make performance
 
-# Premium monitoring
-make premium-stats   # Subscription analytics
-make expire-premium  # Check expiring subscriptions
-make payment-status  # Payment transaction status
+# Database statistics
+make stats
+
+# Health checks
+make health
 ```
 
-### Migration Management
+## 🛠️ Development
+
+### Creating Migrations
 
 ```bash
-# Migration operations
-make migrate-status  # Show migration status
-make migrate-history # Show migration history
-make migrate-create NAME=feature_name  # Create new migration
+# Create new migration
+make migrate-create NAME=add_user_avatar
+
+# Run migrations
+make migrate
+
+# Check migration status
+make migrate-status
+
+# View migration history
+make migrate-history
 ```
 
-## 🔄 Premium Expiry Automation
+### Sample Migration (PostgreSQL)
 
-### Cron Job Setup
+```sql
+-- Migration: add_user_avatar
+-- Created: 2024-01-15
 
-Add to your crontab for automatic premium expiry management:
+-- Connect to the database
+\c van_edu_db;
+
+-- Add avatar column to users table
+ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500);
+
+-- Create index for avatar queries
+CREATE INDEX idx_users_avatar ON users(avatar_url) WHERE avatar_url IS NOT NULL;
+
+-- Rollback: ALTER TABLE users DROP COLUMN avatar_url;
+```
+
+### Backup & Restore
 
 ```bash
-# Check every hour for expired premium subscriptions
-0 * * * * cd /path/to/van-edu-db && make expire-premium
+# Create backup
+make backup
 
-# Daily premium statistics report
-0 8 * * * cd /path/to/van-edu-db && make premium-stats | mail -s "Daily Premium Report" admin@vanedu.com
+# List available backups
+make list-backups
+
+# Interactive restore
+make restore
+
+# Force restore from latest
+make restore-force
 ```
 
-### Expiry Script (Backend)
+## 🚀 Production Deployment
+
+### Environment Setup
+
+1. **Copy environment template**:
+   ```bash
+   cp env.example .env
+   ```
+
+2. **Configure production values**:
+   - Strong passwords for all database users
+   - Secure backup encryption key
+   - Production-appropriate resource limits
+
+3. **Initialize system**:
+   ```bash
+   make init
+   ```
+
+### Monitoring & Maintenance
+
+```bash
+# Daily operations
+make health          # Check system health
+make stats          # Review platform statistics
+make premium-stats  # Monitor subscription metrics
+
+# Weekly operations
+make backup         # Create encrypted backup
+make performance    # Review performance metrics
+
+# Monthly operations
+make expire-premium # Process expired subscriptions
+```
+
+### Automated Backups
+
+Add to crontab for automated daily backups:
+
+```bash
+# Daily backup at 2 AM
+0 2 * * * cd /path/to/van-edu-db && make backup >/dev/null 2>&1
+
+# Weekly cleanup and health check
+0 3 * * 0 cd /path/to/van-edu-db && make health
+```
+
+## 📚 API Examples
+
+### Premium Content Access Control
 
 ```javascript
-// Automated premium expiry checker
-const expirePremiumUsers = async () => {
-  await connection.execute(`
-    UPDATE users 
-    SET isPremium = FALSE, currentPackage = NULL
-    WHERE isPremium = TRUE 
-    AND premiumExpiryDate IS NOT NULL 
-    AND premiumExpiryDate < NOW()
-  `);
+// Middleware to check premium access
+const requirePremium = async (req, res, next) => {
+  const userId = req.user.id;
+  const hasAccess = await checkPremiumAccess(userId);
+  
+  if (!hasAccess) {
+    return res.status(403).json({
+      error: 'Premium subscription required',
+      upgradeUrl: '/premium/packages'
+    });
+  }
+  
+  next();
 };
 
-// Run every hour
-setInterval(expirePremiumUsers, 60 * 60 * 1000);
+// Protected route
+app.get('/api/courses/:id/premium-lessons', requirePremium, async (req, res) => {
+  const lessons = await pool.query(
+    'SELECT * FROM lessons WHERE course_id = $1 AND is_premium = true',
+    [req.params.id]
+  );
+  
+  res.json(lessons.rows);
+});
 ```
 
-## 🚨 Troubleshooting
+### Admin Permission Checking
 
-### Common Issues
+```javascript
+// Check admin permissions using JSONB
+const hasPermission = async (userId, permission) => {
+  const result = await pool.query(
+    'SELECT permissions ? $2 as has_permission FROM users WHERE id = $1 AND role = $3',
+    [userId, permission, 'admin']
+  );
+  
+  return result.rows[0]?.has_permission || false;
+};
 
-#### Database Connection Failed
-```bash
-# Check service status
-make status
-make health
-
-# Restart services
-make restart
+// Admin middleware
+const requirePermission = (permission) => async (req, res, next) => {
+  const hasAccess = await hasPermission(req.user.id, permission);
+  
+  if (!hasAccess) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  
+  next();
+};
 ```
 
-#### Premium Status Issues
-```bash
-# Check expired subscriptions
-make expire-premium
+## 🤝 Contributing
 
-# Verify payment transactions
-make payment-status
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
 
-# Check user premium status
-make mysql-app
-SELECT fullName, isPremium, premiumExpiryDate, currentPackage FROM users WHERE role = 'user';
-```
+### Development Guidelines
 
-#### Payment Processing Issues
-```bash
-# Check pending payments
-SELECT * FROM payment_transaction WHERE status = 'pending' AND expiresAt > NOW();
-
-# Review expired payments
-SELECT * FROM payment_transaction WHERE status = 'expired';
-```
-
-## 📞 Support
-
-### Getting Help
-
-- **Documentation**: Complete setup and usage docs included
-- **Health Checks**: `make health` for system diagnostics
-- **Logs**: `make logs` for container logs
-- **Performance**: `make performance` for metrics
-
-### Development
-
-```bash
-# Development environment
-make up-dev          # Start with phpMyAdmin
-make reset          # Reset for testing (DANGER!)
-make clean          # Clean containers/volumes
-```
-
----
+- Follow PostgreSQL best practices
+- Use camelCase for new table/column names
+- Include migration scripts for schema changes
+- Add appropriate indexes for new queries
+- Update documentation for new features
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
+## 🆘 Support
+
+For support and questions:
+
+- Create an issue in the repository
+- Check the troubleshooting section
+- Review the PostgreSQL documentation
+- Contact the development team
+
 ---
 
-**🎓 Van Edu Premium Platform** - Empowering education through premium subscription technology. 
+**Van Edu Premium Subscription Platform** - Empowering online education with robust database architecture. 

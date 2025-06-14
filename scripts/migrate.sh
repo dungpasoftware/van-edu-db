@@ -1,18 +1,17 @@
 #!/bin/bash
 
-# Van Edu Database Migration Script
-# This script applies database migrations
+# Van Edu Premium Subscription Platform - PostgreSQL Migration Script
+# Handles database schema migrations with tracking
 
 set -e
 
 # Configuration
-CONTAINER_NAME="van-edu-mysql"
-DB_NAME="van_edu_db"
+CONTAINER_NAME="van-edu-postgres"
 MIGRATIONS_DIR="./migrations"
 
 # Load environment variables
 if [ -f .env ]; then
-    source .env
+    export $(cat .env | grep -v '^#' | xargs)
 fi
 
 # Colors for output
@@ -42,7 +41,7 @@ info() {
 # Check if container is running
 check_container() {
     if ! docker ps | grep -q $CONTAINER_NAME; then
-        error "MySQL container '$CONTAINER_NAME' is not running"
+        error "PostgreSQL container '$CONTAINER_NAME' is not running"
         exit 1
     fi
 }
@@ -51,26 +50,23 @@ check_container() {
 create_migrations_table() {
     log "Creating migrations table if it doesn't exist..."
     
-    docker exec $CONTAINER_NAME mysql \
-        -u${MYSQL_USER} \
-        -p${MYSQL_PASSWORD} \
-        -e "USE $DB_NAME; CREATE TABLE IF NOT EXISTS migrations (
-            id INT AUTO_INCREMENT PRIMARY KEY,
+    docker exec $CONTAINER_NAME psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+        CREATE TABLE IF NOT EXISTS migrations (
+            id SERIAL PRIMARY KEY,
             migration VARCHAR(255) NOT NULL UNIQUE,
-            executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_migration (migration)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
+            executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_migrations_migration ON migrations(migration);
+    "
     
     log "Migrations table ready"
 }
 
 # Get executed migrations
 get_executed_migrations() {
-    docker exec $CONTAINER_NAME mysql \
-        -u${MYSQL_USER} \
-        -p${MYSQL_PASSWORD} \
-        -e "USE $DB_NAME; SELECT migration FROM migrations ORDER BY id;" \
-        --silent --skip-column-names
+    docker exec $CONTAINER_NAME psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -t -c "
+        SELECT migration FROM migrations ORDER BY id;
+    " | tr -d ' '
 }
 
 # Check if migration was executed
@@ -89,17 +85,13 @@ execute_migration() {
     log "Executing migration: $migration_name"
     
     # Execute the migration SQL
-    docker exec -i $CONTAINER_NAME mysql \
-        -u${MYSQL_USER} \
-        -p${MYSQL_PASSWORD} \
-        $DB_NAME < "$migration_file"
+    docker exec -i $CONTAINER_NAME psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 < "$migration_file"
     
     if [ $? -eq 0 ]; then
         # Record migration as executed
-        docker exec $CONTAINER_NAME mysql \
-            -u${MYSQL_USER} \
-            -p${MYSQL_PASSWORD} \
-            -e "USE $DB_NAME; INSERT INTO migrations (migration) VALUES ('$migration_name');"
+        docker exec $CONTAINER_NAME psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+            INSERT INTO migrations (migration) VALUES ('$migration_name');
+        "
         
         log "Migration $migration_name executed successfully"
     else
@@ -191,11 +183,12 @@ create_migration() {
 -- Migration: $migration_name
 -- Created: $(date)
 
-USE $DB_NAME;
+-- Connect to the database
+\c $POSTGRES_DB;
 
 -- Add your migration SQL here
 -- Example:
--- ALTER TABLE users ADD COLUMN new_field VARCHAR(255) NULL;
+-- ALTER TABLE users ADD COLUMN new_field VARCHAR(255);
 
 -- Don't forget to add rollback instructions in comments:
 -- Rollback: ALTER TABLE users DROP COLUMN new_field;
@@ -210,11 +203,9 @@ show_history() {
     info "Migration History:"
     echo ""
     
-    docker exec $CONTAINER_NAME mysql \
-        -u${MYSQL_USER} \
-        -p${MYSQL_PASSWORD} \
-        -e "USE $DB_NAME; SELECT id, migration, executed_at FROM migrations ORDER BY id DESC;" \
-        --table
+    docker exec $CONTAINER_NAME psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+        SELECT id, migration, executed_at FROM migrations ORDER BY id DESC;
+    "
 }
 
 # Show usage

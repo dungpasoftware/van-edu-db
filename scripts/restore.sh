@@ -1,20 +1,9 @@
 #!/bin/bash
 
-# Van Edu Database Restore Script
-# This script restores database from encrypted backups
+# Van Edu Premium Subscription Platform - PostgreSQL Restore Script
+# Restores encrypted, compressed backups with safety checks
 
 set -e
-
-# Configuration
-CONTAINER_NAME="van-edu-mysql"
-DB_NAME="van_edu_db"
-BACKUP_DIR="/backups"
-ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY:-""}
-
-# Load environment variables
-if [ -f .env ]; then
-    source .env
-fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -23,307 +12,258 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Functions
-log() {
-    echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')] $1${NC}"
-}
+# Load environment variables
+if [ -f .env ]; then
+    export $(cat .env | grep -v '^#' | xargs)
+fi
 
-warn() {
-    echo -e "${YELLOW}[$(date +'%Y-%m-%d %H:%M:%S')] WARNING: $1${NC}"
-}
+# Configuration
+BACKUP_DIR="./backups"
+CONTAINER_NAME="van-edu-postgres"
+ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY:-"van_edu_backup_key_2024"}
 
-error() {
-    echo -e "${RED}[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $1${NC}"
-}
-
-info() {
-    echo -e "${BLUE}[$(date +'%Y-%m-%d %H:%M:%S')] INFO: $1${NC}"
-}
-
-# Check if container is running
-check_container() {
-    if ! docker ps | grep -q $CONTAINER_NAME; then
-        error "MySQL container '$CONTAINER_NAME' is not running"
-        exit 1
-    fi
-}
-
-# List available backups
-list_backups() {
-    info "Available backups in $BACKUP_DIR:"
-    echo ""
-    
-    local backups=$(find "$BACKUP_DIR" -name "van_edu_backup_*.sql*" -type f | sort -r)
-    
-    if [ -z "$backups" ]; then
-        warn "No backups found in $BACKUP_DIR"
-        return 1
-    fi
-    
-    local i=1
-    for backup in $backups; do
-        local filename=$(basename "$backup")
-        local size=$(du -h "$backup" | cut -f1)
-        local date=$(stat -c %y "$backup" | cut -d'.' -f1)
-        echo "$i) $filename (Size: $size, Created: $date)"
-        i=$((i+1))
-    done
-    echo ""
-}
-
-# Select backup file
-select_backup() {
-    if [ -n "$1" ]; then
-        # Backup file provided as argument
-        BACKUP_FILE="$1"
-        if [ ! -f "$BACKUP_FILE" ]; then
-            error "Backup file not found: $BACKUP_FILE"
-            exit 1
-        fi
-    else
-        # Interactive selection
-        list_backups
-        
-        local backups_array=($(find "$BACKUP_DIR" -name "van_edu_backup_*.sql*" -type f | sort -r))
-        
-        if [ ${#backups_array[@]} -eq 0 ]; then
-            error "No backups available for restore"
-            exit 1
-        fi
-        
-        echo -n "Select backup to restore (1-${#backups_array[@]}): "
-        read selection
-        
-        if [[ ! "$selection" =~ ^[0-9]+$ ]] || [ "$selection" -lt 1 ] || [ "$selection" -gt ${#backups_array[@]} ]; then
-            error "Invalid selection"
-            exit 1
-        fi
-        
-        BACKUP_FILE="${backups_array[$((selection-1))]}"
-    fi
-    
-    log "Selected backup: $(basename "$BACKUP_FILE")"
-}
-
-# Verify backup file
-verify_backup() {
-    log "Verifying backup file integrity..."
-    
-    if [[ "$BACKUP_FILE" == *.gz ]]; then
-        if ! gzip -t "$BACKUP_FILE"; then
-            error "Backup file is corrupted or invalid"
-            exit 1
-        fi
-        log "Backup file integrity verified"
-    fi
-}
-
-# Prepare backup for restore
-prepare_backup() {
-    local temp_dir="/tmp/van_edu_restore_$$"
-    mkdir -p "$temp_dir"
-    
-    local working_file="$BACKUP_FILE"
-    
-    # Decompress if needed
-    if [[ "$working_file" == *.gz ]]; then
-        log "Decompressing backup..."
-        working_file="$temp_dir/$(basename "$BACKUP_FILE" .gz)"
-        gunzip -c "$BACKUP_FILE" > "$working_file"
-    fi
-    
-    # Decrypt if needed
-    if [[ "$working_file" == *.enc ]]; then
-        if [ -z "$ENCRYPTION_KEY" ]; then
-            error "Backup is encrypted but no encryption key provided"
-            error "Set BACKUP_ENCRYPTION_KEY environment variable"
-            rm -rf "$temp_dir"
-            exit 1
-        fi
-        
-        log "Decrypting backup..."
-        local decrypted_file="$temp_dir/$(basename "$working_file" .enc)"
-        openssl enc -aes-256-cbc -d -in "$working_file" -out "$decrypted_file" -k "$ENCRYPTION_KEY"
-        
-        if [ $? -ne 0 ]; then
-            error "Failed to decrypt backup. Check your encryption key."
-            rm -rf "$temp_dir"
-            exit 1
-        fi
-        
-        working_file="$decrypted_file"
-    fi
-    
-    RESTORE_FILE="$working_file"
-    TEMP_DIR="$temp_dir"
-    log "Backup prepared for restore: $RESTORE_FILE"
-}
-
-# Create database backup before restore
-create_pre_restore_backup() {
-    if [ "$SKIP_BACKUP" = false ]; then
-        log "Creating backup before restore..."
-        local backup_script="$(dirname "$0")/backup.sh"
-        
-        if [ -f "$backup_script" ]; then
-            $backup_script --no-cleanup
-            log "Pre-restore backup completed"
-        else
-            warn "Backup script not found, skipping pre-restore backup"
-        fi
-    else
-        warn "Skipping pre-restore backup as requested"
-    fi
-}
-
-# Confirm restore operation
-confirm_restore() {
-    if [ "$FORCE_RESTORE" = true ]; then
-        return 0
-    fi
-    
-    warn "This operation will replace all data in the '$DB_NAME' database!"
-    warn "Backup file: $(basename "$BACKUP_FILE")"
-    echo -n "Are you sure you want to continue? (yes/no): "
-    read confirmation
-    
-    if [ "$confirmation" != "yes" ]; then
-        log "Restore operation cancelled"
-        cleanup
-        exit 0
-    fi
-}
-
-# Perform database restore
-restore_database() {
-    log "Starting database restore..."
-    
-    # Import the backup
-    docker exec -i $CONTAINER_NAME mysql \
-        -u${MYSQL_USER} \
-        -p${MYSQL_PASSWORD} < "$RESTORE_FILE"
-    
-    if [ $? -eq 0 ]; then
-        log "Database restore completed successfully"
-    else
-        error "Database restore failed"
-        cleanup
-        exit 1
-    fi
-}
-
-# Cleanup temporary files
-cleanup() {
-    if [ -n "$TEMP_DIR" ] && [ -d "$TEMP_DIR" ]; then
-        rm -rf "$TEMP_DIR"
-        log "Cleaned up temporary files"
-    fi
-}
-
-# Verify restore
-verify_restore() {
-    log "Verifying restore..."
-    
-    # Check if database exists and has tables
-    local table_count=$(docker exec $CONTAINER_NAME mysql \
-        -u${MYSQL_USER} \
-        -p${MYSQL_PASSWORD} \
-        -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$DB_NAME';" \
-        --silent --skip-column-names)
-    
-    if [ "$table_count" -gt 0 ]; then
-        log "Restore verification successful. Found $table_count tables in database."
-    else
-        error "Restore verification failed. No tables found in database."
-        exit 1
-    fi
-}
-
-# Show usage
-usage() {
-    echo "Usage: $0 [OPTIONS] [BACKUP_FILE]"
-    echo ""
-    echo "Options:"
-    echo "  -h, --help         Show this help message"
-    echo "  -f, --force        Skip confirmation prompt"
-    echo "  -l, --list         List available backups and exit"
-    echo "  --skip-backup      Skip creating backup before restore"
-    echo ""
-    echo "Arguments:"
-    echo "  BACKUP_FILE        Path to backup file (optional, will prompt if not provided)"
-    echo ""
-    echo "Environment variables:"
-    echo "  BACKUP_ENCRYPTION_KEY  Key for decrypting backups"
-    echo ""
-    echo "Examples:"
-    echo "  $0                                    # Interactive backup selection"
-    echo "  $0 -f /backups/backup.sql.gz         # Force restore from specific file"
-    echo "  $0 -l                                # List available backups"
-    echo ""
-}
-
-# Main execution
-main() {
-    log "Starting Van Edu database restore process..."
-    
-    check_container
-    select_backup "$BACKUP_FILE_ARG"
-    verify_backup
-    prepare_backup
-    create_pre_restore_backup
-    confirm_restore
-    restore_database
-    verify_restore
-    cleanup
-    
-    log "Database restore completed successfully!"
-    info "Database '$DB_NAME' has been restored from: $(basename "$BACKUP_FILE")"
-}
+# Command line options
+FORCE_RESTORE=false
+LIST_BACKUPS=false
 
 # Parse command line arguments
-FORCE_RESTORE=false
-SKIP_BACKUP=false
-LIST_ONLY=false
-BACKUP_FILE_ARG=""
-
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -h|--help)
-            usage
-            exit 0
-            ;;
         -f|--force)
             FORCE_RESTORE=true
             shift
             ;;
         -l|--list)
-            LIST_ONLY=true
+            LIST_BACKUPS=true
             shift
             ;;
-        --skip-backup)
-            SKIP_BACKUP=true
-            shift
-            ;;
-        -*)
-            error "Unknown option: $1"
-            usage
-            exit 1
+        -h|--help)
+            echo "Van Edu Premium Subscription Platform - PostgreSQL Restore Script"
+            echo ""
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  -f, --force    Force restore from latest backup without confirmation"
+            echo "  -l, --list     List available backups and exit"
+            echo "  -h, --help     Show this help message"
+            echo ""
+            exit 0
             ;;
         *)
-            BACKUP_FILE_ARG="$1"
-            shift
+            echo -e "${RED}❌ Unknown option: $1${NC}"
+            exit 1
             ;;
     esac
 done
 
-# Handle list-only mode
-if [ "$LIST_ONLY" = true ]; then
+echo -e "${BLUE}🔄 Van Edu Premium Subscription Platform - PostgreSQL Restore${NC}"
+echo -e "${BLUE}================================================================${NC}"
+echo ""
+
+# Function to list available backups
+list_backups() {
+    echo -e "${BLUE}📁 Available Backups:${NC}"
+    if ls "$BACKUP_DIR"/van_edu_backup_*.sql.gz.enc >/dev/null 2>&1; then
+        local count=0
+        for backup in "$BACKUP_DIR"/van_edu_backup_*.sql.gz.enc; do
+            if [ -f "$backup" ]; then
+                ((count++))
+                SIZE=$(du -h "$backup" | cut -f1)
+                DATE=$(stat -c %y "$backup" | cut -d' ' -f1,2 | cut -d'.' -f1)
+                echo "  $count. $(basename "$backup") - $SIZE - $DATE"
+            fi
+        done
+        return $count
+    else
+        echo "  No backups found in $BACKUP_DIR"
+        return 0
+    fi
+}
+
+# If list option is specified, show backups and exit
+if [ "$LIST_BACKUPS" = true ]; then
     list_backups
     exit 0
 fi
 
-# Trap to ensure cleanup on exit
-trap cleanup EXIT
+# Check if container is running
+if ! docker ps | grep -q "$CONTAINER_NAME"; then
+    echo -e "${RED}❌ Error: PostgreSQL container '$CONTAINER_NAME' is not running${NC}"
+    echo "Please start the container first: make up"
+    exit 1
+fi
 
-# Run main function
-main 
+# Check if database is accessible
+if ! docker exec "$CONTAINER_NAME" pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then
+    echo -e "${RED}❌ Error: Cannot connect to PostgreSQL database${NC}"
+    exit 1
+fi
+
+# List available backups
+list_backups
+BACKUP_COUNT=$?
+
+if [ $BACKUP_COUNT -eq 0 ]; then
+    echo -e "${RED}❌ No backups found. Please create a backup first.${NC}"
+    exit 1
+fi
+
+# Select backup to restore
+if [ "$FORCE_RESTORE" = true ]; then
+    # Use the latest backup
+    SELECTED_BACKUP=$(ls -t "$BACKUP_DIR"/van_edu_backup_*.sql.gz.enc | head -n 1)
+    echo -e "${YELLOW}🔄 Force restore mode: Using latest backup${NC}"
+    echo "  Selected: $(basename "$SELECTED_BACKUP")"
+else
+    # Interactive selection
+    echo ""
+    echo -e "${YELLOW}Please select a backup to restore (1-$BACKUP_COUNT):${NC}"
+    read -p "Enter backup number: " BACKUP_NUMBER
+    
+    # Validate input
+    if ! [[ "$BACKUP_NUMBER" =~ ^[0-9]+$ ]] || [ "$BACKUP_NUMBER" -lt 1 ] || [ "$BACKUP_NUMBER" -gt $BACKUP_COUNT ]; then
+        echo -e "${RED}❌ Invalid backup number${NC}"
+        exit 1
+    fi
+    
+    # Get selected backup file
+    SELECTED_BACKUP=$(ls -t "$BACKUP_DIR"/van_edu_backup_*.sql.gz.enc | sed -n "${BACKUP_NUMBER}p")
+fi
+
+if [ ! -f "$SELECTED_BACKUP" ]; then
+    echo -e "${RED}❌ Selected backup file not found${NC}"
+    exit 1
+fi
+
+echo ""
+echo -e "${YELLOW}📋 Restore Configuration:${NC}"
+echo "  Database: $POSTGRES_DB"
+echo "  User: $POSTGRES_USER"
+echo "  Container: $CONTAINER_NAME"
+echo "  Backup File: $(basename "$SELECTED_BACKUP")"
+echo "  Backup Size: $(du -h "$SELECTED_BACKUP" | cut -f1)"
+echo ""
+
+# Final confirmation unless force mode
+if [ "$FORCE_RESTORE" = false ]; then
+    echo -e "${RED}⚠️  WARNING: This will completely replace the current database!${NC}"
+    echo -e "${RED}⚠️  All existing data will be lost!${NC}"
+    echo ""
+    read -p "Are you sure you want to continue? (yes/no): " CONFIRM
+    
+    if [ "$CONFIRM" != "yes" ]; then
+        echo -e "${YELLOW}❌ Restore cancelled${NC}"
+        exit 0
+    fi
+fi
+
+# Create a backup of current database before restore
+echo -e "${YELLOW}💾 Creating backup of current database before restore...${NC}"
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+PRE_RESTORE_BACKUP="$BACKUP_DIR/pre_restore_backup_${TIMESTAMP}.sql.gz.enc"
+
+docker exec "$CONTAINER_NAME" pg_dump \
+    -U "$POSTGRES_USER" \
+    -d "$POSTGRES_DB" \
+    --verbose \
+    --no-password \
+    --format=plain \
+    --no-owner \
+    --no-privileges \
+    --clean \
+    --if-exists \
+    | gzip | openssl enc -aes-256-cbc -salt -k "$ENCRYPTION_KEY" > "$PRE_RESTORE_BACKUP"
+
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✅ Pre-restore backup created: $(basename "$PRE_RESTORE_BACKUP")${NC}"
+else
+    echo -e "${RED}❌ Warning: Failed to create pre-restore backup${NC}"
+    if [ "$FORCE_RESTORE" = false ]; then
+        read -p "Continue anyway? (yes/no): " CONTINUE
+        if [ "$CONTINUE" != "yes" ]; then
+            exit 1
+        fi
+    fi
+fi
+
+# Prepare temporary files
+TEMP_DIR=$(mktemp -d)
+TEMP_ENCRYPTED="$TEMP_DIR/backup.sql.gz.enc"
+TEMP_COMPRESSED="$TEMP_DIR/backup.sql.gz"
+TEMP_SQL="$TEMP_DIR/backup.sql"
+
+# Copy backup to temp directory
+cp "$SELECTED_BACKUP" "$TEMP_ENCRYPTED"
+
+# Decrypt backup
+echo -e "${YELLOW}🔓 Decrypting backup...${NC}"
+if ! openssl enc -aes-256-cbc -d -in "$TEMP_ENCRYPTED" -out "$TEMP_COMPRESSED" -k "$ENCRYPTION_KEY"; then
+    echo -e "${RED}❌ Error: Failed to decrypt backup. Check encryption key.${NC}"
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
+echo -e "${GREEN}✅ Backup decrypted${NC}"
+
+# Decompress backup
+echo -e "${YELLOW}📦 Decompressing backup...${NC}"
+if ! gunzip -c "$TEMP_COMPRESSED" > "$TEMP_SQL"; then
+    echo -e "${RED}❌ Error: Failed to decompress backup${NC}"
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
+echo -e "${GREEN}✅ Backup decompressed${NC}"
+
+# Verify SQL file
+echo -e "${YELLOW}🔍 Verifying backup file...${NC}"
+if ! head -n 5 "$TEMP_SQL" | grep -q "PostgreSQL\|--"; then
+    echo -e "${RED}❌ Error: Backup file doesn't appear to be a valid PostgreSQL dump${NC}"
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
+echo -e "${GREEN}✅ Backup file verified${NC}"
+
+# Restore database
+echo -e "${YELLOW}🔄 Restoring database...${NC}"
+echo "This may take a few minutes depending on the database size..."
+
+if docker exec -i "$CONTAINER_NAME" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 < "$TEMP_SQL"; then
+    echo -e "${GREEN}✅ Database restored successfully${NC}"
+else
+    echo -e "${RED}❌ Error: Database restore failed${NC}"
+    echo -e "${YELLOW}💡 You can restore the pre-restore backup if needed:${NC}"
+    echo "  Pre-restore backup: $(basename "$PRE_RESTORE_BACKUP")"
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
+
+# Clean up temporary files
+rm -rf "$TEMP_DIR"
+
+# Verify restore
+echo -e "${YELLOW}🔍 Verifying restored database...${NC}"
+TABLE_COUNT=$(docker exec "$CONTAINER_NAME" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public';" | tr -d ' ')
+
+if [ "$TABLE_COUNT" -gt 0 ]; then
+    echo -e "${GREEN}✅ Database verification successful${NC}"
+    echo "  Tables found: $TABLE_COUNT"
+else
+    echo -e "${RED}❌ Warning: No tables found in restored database${NC}"
+fi
+
+# Show restore summary
+echo ""
+echo -e "${BLUE}📊 Restore Summary:${NC}"
+echo "  Restored From: $(basename "$SELECTED_BACKUP")"
+echo "  Database: $POSTGRES_DB"
+echo "  Tables: $TABLE_COUNT"
+echo "  Completed: $(date)"
+echo "  Pre-restore backup: $(basename "$PRE_RESTORE_BACKUP")"
+echo ""
+
+echo -e "${GREEN}🎉 Database restore completed successfully!${NC}"
+echo ""
+echo -e "${YELLOW}💡 Next steps:${NC}"
+echo "  1. Verify your application works correctly"
+echo "  2. Test critical functionality"
+echo "  3. Remove pre-restore backup if everything is working:"
+echo "     rm \"$PRE_RESTORE_BACKUP\"" 

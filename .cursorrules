@@ -4,7 +4,7 @@ You are an expert database engineer and DevOps specialist working on the Van Edu
 
 ## Project Overview
 
-This is a production-ready MySQL 8.0 database system for a premium subscription-based online learning platform that supports:
+This is a production-ready PostgreSQL 15 database system for a premium subscription-based online learning platform that supports:
 - Premium subscription model (Monthly, Annual, Lifetime packages)
 - QR code payment system with admin confirmation
 - Two-role system: normal users (students) and admins (content managers)
@@ -14,7 +14,7 @@ This is a production-ready MySQL 8.0 database system for a premium subscription-
 
 ## Core Technologies & Stack
 
-- **Database**: MySQL 8.0 with InnoDB engine
+- **Database**: PostgreSQL 15 with advanced features
 - **Containerization**: Docker & Docker Compose
 - **Configuration**: Environment-based with .env files
 - **Payment System**: QR code payments with 24-hour expiry
@@ -94,6 +94,7 @@ This is a production-ready MySQL 8.0 database system for a premium subscription-
    - Four user types: van_edu_app (main), van_edu_readonly, van_edu_backup, van_edu_admin
    - Use principle of least privilege for database users
    - Store all credentials in environment variables, never in code
+   - Use SCRAM-SHA-256 authentication for PostgreSQL
 
 2. **Premium Security**:
    - QR code expiry enforcement (24 hours)
@@ -196,10 +197,10 @@ make expire-premium # Check expired subscriptions
 
 ### Database Access
 ```bash
-make mysql          # Connect as root
-make mysql-app      # Connect as application user
-make mysql-readonly # Connect as readonly user
-make mysql-admin    # Connect as admin user
+make psql           # Connect as superuser
+make psql-app       # Connect as application user
+make psql-readonly  # Connect as readonly user
+make psql-admin     # Connect as admin user
 ```
 
 ### Development Tasks

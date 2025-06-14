@@ -1,12 +1,12 @@
-# Van Edu Database Makefile
+# Van Edu Premium Subscription Platform - PostgreSQL Makefile
 # Simplifies common database operations
 
 .PHONY: help build up down restart logs backup restore migrate seed clean status
 
 # Default target
 help: ## Show this help message
-	@echo "Van Edu Database Management Commands"
-	@echo "===================================="
+	@echo "Van Edu Premium Subscription Platform - PostgreSQL Management"
+	@echo "============================================================="
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@echo ""
@@ -15,22 +15,22 @@ help: ## Show this help message
 	@echo "  - Set BACKUP_ENCRYPTION_KEY for secure backups"
 
 # Docker Operations
-build: ## Build MySQL container
+build: ## Build PostgreSQL container
 	docker-compose build
 
 up: ## Start the database services
 	docker-compose up -d
-	@echo "Waiting for MySQL to be ready..."
+	@echo "Waiting for PostgreSQL to be ready..."
 	@sleep 10
 	@make status
 
-up-dev: ## Start services with phpMyAdmin for development
+up-dev: ## Start services with pgAdmin for development
 	docker-compose --profile dev up -d
 	@echo "Waiting for services to be ready..."
 	@sleep 15
 	@make status
 	@echo ""
-	@echo "🌐 phpMyAdmin: http://localhost:8080"
+	@echo "🌐 pgAdmin: http://localhost:8080"
 
 down: ## Stop all services
 	docker-compose down
@@ -40,7 +40,7 @@ restart: ## Restart all services
 	@make up
 
 logs: ## Show container logs
-	docker-compose logs -f mysql
+	docker-compose logs -f postgres
 
 logs-all: ## Show all service logs
 	docker-compose logs -f
@@ -50,7 +50,7 @@ status: ## Show service status
 	@docker-compose ps
 	@echo ""
 	@echo "Database Connection Test:"
-	@docker exec van-edu-mysql mysqladmin ping -h localhost -u root -p$(MYSQL_ROOT_PASSWORD) 2>/dev/null && echo "✅ MySQL is running" || echo "❌ MySQL is not responding"
+	@docker exec van-edu-postgres pg_isready -U $(POSTGRES_USER) -d $(POSTGRES_DB) 2>/dev/null && echo "✅ PostgreSQL is running" || echo "❌ PostgreSQL is not responding"
 
 # Database Operations
 init: up migrate seed ## Initialize database (start, migrate, seed)
@@ -75,7 +75,7 @@ migrate-history: ## Show migration history
 
 seed: ## Seed database with sample data
 	@echo "Seeding database with sample data..."
-	@docker exec -i van-edu-mysql mysql -u$(MYSQL_USER) -p$(MYSQL_PASSWORD) van_edu_db < scripts/init/03-seed-data.sql
+	@docker exec -i van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) < scripts/init/03-seed-data.sql
 	@echo "✅ Database seeded successfully"
 
 # Backup Operations
@@ -100,25 +100,25 @@ list-backups: ## List available backups
 	@./scripts/restore.sh -l
 
 # Database Access
-mysql: ## Connect to MySQL as root
-	docker exec -it van-edu-mysql mysql -u root -p$(MYSQL_ROOT_PASSWORD)
+psql: ## Connect to PostgreSQL as superuser
+	docker exec -it van-edu-postgres psql -U postgres
 
-mysql-app: ## Connect to MySQL as application user
-	docker exec -it van-edu-mysql mysql -u$(MYSQL_USER) -p$(MYSQL_PASSWORD) $(MYSQL_DATABASE)
+psql-app: ## Connect to PostgreSQL as application user
+	docker exec -it van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB)
 
-mysql-readonly: ## Connect to MySQL as readonly user
-	docker exec -it van-edu-mysql mysql -u van_edu_readonly -p readonly_secure_2024! $(MYSQL_DATABASE)
+psql-readonly: ## Connect to PostgreSQL as readonly user
+	docker exec -it van-edu-postgres psql -U van_edu_readonly -d $(POSTGRES_DB)
 
-mysql-admin: ## Connect to MySQL as admin user
-	docker exec -it van-edu-mysql mysql -u van_edu_admin -p admin_secure_2024! $(MYSQL_DATABASE)
+psql-admin: ## Connect to PostgreSQL as admin user
+	docker exec -it van-edu-postgres psql -U van_edu_admin -d $(POSTGRES_DB)
 
 # Development Operations
 reset: ## Reset database (WARNING: destroys all data)
 	@echo "⚠️  WARNING: This will destroy all database data!"
 	@read -p "Are you sure? (yes/no): " confirm && [ "$$confirm" = "yes" ] || exit 1
 	@make down
-	@docker volume rm van-edu-mysql-data || true
-	@docker volume rm van-edu-mysql-logs || true
+	@docker volume rm van-edu-postgres-data || true
+	@docker volume rm van-edu-postgres-logs || true
 	@make up
 	@sleep 10
 	@make migrate
@@ -134,10 +134,9 @@ clean: ## Clean up containers and volumes
 # Monitoring Operations
 stats: ## Show database statistics
 	@echo "Van Edu Premium Platform Statistics:"
-	@docker exec van-edu-mysql mysql -u$(MYSQL_USER) -p$(MYSQL_PASSWORD) -e "\
-		USE $(MYSQL_DATABASE); \
-		SELECT 'Users' as Table_Name, COUNT(*) as Count FROM users \
-		UNION ALL SELECT 'Premium Users', COUNT(*) FROM users WHERE isPremium = TRUE \
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\
+		SELECT 'Users' as table_name, COUNT(*) as count FROM users \
+		UNION ALL SELECT 'Premium Users', COUNT(*) FROM users WHERE is_premium = TRUE \
 		UNION ALL SELECT 'Admin Users', COUNT(*) FROM users WHERE role = 'admin' \
 		UNION ALL SELECT 'Packages', COUNT(*) FROM package \
 		UNION ALL SELECT 'Payment Transactions', COUNT(*) FROM payment_transaction \
@@ -145,57 +144,58 @@ stats: ## Show database statistics
 		UNION ALL SELECT 'Pending Payments', COUNT(*) FROM payment_transaction WHERE status = 'pending' \
 		UNION ALL SELECT 'Categories', COUNT(*) FROM categories \
 		UNION ALL SELECT 'Courses', COUNT(*) FROM courses \
-		UNION ALL SELECT 'Premium Courses', COUNT(*) FROM courses WHERE isPremium = TRUE \
+		UNION ALL SELECT 'Premium Courses', COUNT(*) FROM courses WHERE is_premium = TRUE \
 		UNION ALL SELECT 'Lessons', COUNT(*) FROM lessons \
-		UNION ALL SELECT 'Premium Lessons', COUNT(*) FROM lessons WHERE isPremium = TRUE;" --table
+		UNION ALL SELECT 'Premium Lessons', COUNT(*) FROM lessons WHERE is_premium = TRUE;"
 
 tables: ## List all tables
-	@docker exec van-edu-mysql mysql -u$(MYSQL_USER) -p$(MYSQL_PASSWORD) -e "USE $(MYSQL_DATABASE); SHOW TABLES;" --table
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\dt"
 
 describe: ## Describe table structure (usage: make describe TABLE=users)
-	@docker exec van-edu-mysql mysql -u$(MYSQL_USER) -p$(MYSQL_PASSWORD) -e "USE $(MYSQL_DATABASE); DESCRIBE $(TABLE);" --table
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\d $(TABLE)"
 
 performance: ## Show performance metrics
-	@echo "MySQL Performance Metrics:"
-	@docker exec van-edu-mysql mysql -u root -p$(MYSQL_ROOT_PASSWORD) -e "\
-		SHOW GLOBAL STATUS WHERE Variable_name IN ('Connections', 'Uptime', 'Queries', 'Slow_queries', 'Threads_connected'); \
-		SELECT ENGINE, COUNT(*) as Tables, ROUND(SUM(data_length)/1024/1024, 2) as 'Data(MB)', ROUND(SUM(index_length)/1024/1024, 2) as 'Index(MB)' \
-		FROM information_schema.TABLES WHERE table_schema='$(MYSQL_DATABASE)' GROUP BY ENGINE;" --table
+	@echo "PostgreSQL Performance Metrics:"
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\
+		SELECT 'Database Size' as metric, pg_size_pretty(pg_database_size('$(POSTGRES_DB)')) as value \
+		UNION ALL SELECT 'Active Connections', COUNT(*)::text FROM pg_stat_activity WHERE state = 'active' \
+		UNION ALL SELECT 'Total Connections', COUNT(*)::text FROM pg_stat_activity \
+		UNION ALL SELECT 'Cache Hit Ratio', ROUND(100.0 * sum(blks_hit) / (sum(blks_hit) + sum(blks_read)), 2)::text || '%' FROM pg_stat_database WHERE datname = '$(POSTGRES_DB)';"
 
 # Security Operations
 create-users: ## Create additional database users
 	@echo "Creating database users..."
-	@docker exec van-edu-mysql mysql -u root -p$(MYSQL_ROOT_PASSWORD) < scripts/init/02-create-user.sql
+	@docker exec van-edu-postgres psql -U postgres -d $(POSTGRES_DB) < scripts/init/02-create-user.sql
 	@echo "✅ Database users created"
 
 check-permissions: ## Check user permissions
 	@echo "Database User Permissions:"
-	@docker exec van-edu-mysql mysql -u root -p$(MYSQL_ROOT_PASSWORD) -e "\
-		SELECT User, Host, db, Select_priv, Insert_priv, Update_priv, Delete_priv \
-		FROM mysql.db WHERE User LIKE 'van_edu_%' ORDER BY User;" --table
+	@docker exec van-edu-postgres psql -U postgres -d $(POSTGRES_DB) -c "\
+		SELECT usename as user, \
+		       CASE WHEN usesuper THEN 'Yes' ELSE 'No' END as superuser, \
+		       CASE WHEN usecreatedb THEN 'Yes' ELSE 'No' END as create_db \
+		FROM pg_user WHERE usename LIKE 'van_edu_%' ORDER BY usename;"
 
 # Premium Operations
 premium-stats: ## Show premium subscription statistics
 	@echo "Premium Subscription Statistics:"
-	@docker exec van-edu-mysql mysql -u$(MYSQL_USER) -p$(MYSQL_PASSWORD) -e "\
-		USE $(MYSQL_DATABASE); \
-		SELECT p.name as Package, p.price as Price, COUNT(pt.id) as Purchases, SUM(CASE WHEN pt.status='confirmed' THEN pt.amount ELSE 0 END) as Revenue \
-		FROM package p LEFT JOIN payment_transaction pt ON p.id = pt.packageId \
-		GROUP BY p.id, p.name, p.price ORDER BY Revenue DESC;" --table
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\
+		SELECT p.name as package, p.price, COUNT(pt.id) as purchases, \
+		       SUM(CASE WHEN pt.status='confirmed' THEN pt.amount ELSE 0 END) as revenue \
+		FROM package p LEFT JOIN payment_transaction pt ON p.id = pt.package_id \
+		GROUP BY p.id, p.name, p.price ORDER BY revenue DESC;"
 
 payment-status: ## Show payment transaction status
 	@echo "Payment Transaction Status:"
-	@docker exec van-edu-mysql mysql -u$(MYSQL_USER) -p$(MYSQL_PASSWORD) -e "\
-		USE $(MYSQL_DATABASE); \
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\
 		SELECT status, COUNT(*) as count, SUM(amount) as total_amount, AVG(amount) as avg_amount \
-		FROM payment_transaction GROUP BY status;" --table
+		FROM payment_transaction GROUP BY status;"
 
 expire-premium: ## Check for expired premium subscriptions
 	@echo "Checking for expired premium subscriptions..."
-	@docker exec van-edu-mysql mysql -u$(MYSQL_USER) -p$(MYSQL_PASSWORD) -e "\
-		USE $(MYSQL_DATABASE); \
-		SELECT fullName, email, premiumExpiryDate, currentPackage \
-		FROM users WHERE isPremium = TRUE AND premiumExpiryDate < NOW();" --table
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\
+		SELECT full_name, email, premium_expiry_date, current_package \
+		FROM users WHERE is_premium = TRUE AND premium_expiry_date < CURRENT_TIMESTAMP;"
 
 # Environment Operations
 setup: ## Initial setup (copy env file, make scripts executable)
@@ -220,24 +220,24 @@ health: ## Run health checks
 	@echo "1. Container Status:"
 	@docker-compose ps
 	@echo ""
-	@echo "2. MySQL Connection:"
-	@docker exec van-edu-mysql mysqladmin ping -h localhost -u root -p$(MYSQL_ROOT_PASSWORD) 2>/dev/null && echo "✅ MySQL connection: OK" || echo "❌ MySQL connection: FAILED"
+	@echo "2. PostgreSQL Connection:"
+	@docker exec van-edu-postgres pg_isready -U $(POSTGRES_USER) -d $(POSTGRES_DB) 2>/dev/null && echo "✅ PostgreSQL connection: OK" || echo "❌ PostgreSQL connection: FAILED"
 	@echo ""
 	@echo "3. Database Exists:"
-	@docker exec van-edu-mysql mysql -u$(MYSQL_USER) -p$(MYSQL_PASSWORD) -e "USE $(MYSQL_DATABASE); SELECT 'Database exists' as Status;" --silent 2>/dev/null && echo "✅ Database: OK" || echo "❌ Database: FAILED"
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "SELECT 'Database exists' as status;" -t 2>/dev/null && echo "✅ Database: OK" || echo "❌ Database: FAILED"
 	@echo ""
 	@echo "4. Tables Count:"
-	@docker exec van-edu-mysql mysql -u$(MYSQL_USER) -p$(MYSQL_PASSWORD) -e "USE $(MYSQL_DATABASE); SELECT COUNT(*) as Tables FROM information_schema.tables WHERE table_schema='$(MYSQL_DATABASE)';" --silent --skip-column-names 2>/dev/null | xargs echo "Tables found:"
+	@docker exec van-edu-postgres psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public';" -t 2>/dev/null | xargs echo "Tables found:"
 	@echo ""
 	@echo "5. Disk Usage:"
-	@docker exec van-edu-mysql df -h /var/lib/mysql
+	@docker exec van-edu-postgres df -h /var/lib/postgresql/data
 	@echo ""
 
 # Utility Commands
 wait: ## Wait for database to be ready
 	@echo "Waiting for database to be ready..."
-	@while ! docker exec van-edu-mysql mysqladmin ping -h localhost -u root -p$(MYSQL_ROOT_PASSWORD) 2>/dev/null; do \
-		echo "Waiting for MySQL..."; \
+	@while ! docker exec van-edu-postgres pg_isready -U $(POSTGRES_USER) -d $(POSTGRES_DB) 2>/dev/null; do \
+		echo "Waiting for PostgreSQL..."; \
 		sleep 2; \
 	done
 	@echo "✅ Database is ready"

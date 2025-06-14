@@ -1,213 +1,171 @@
 #!/bin/bash
 
-# Van Edu Database Backup Script
-# This script creates encrypted backups with rotation
+# Van Edu Premium Subscription Platform - PostgreSQL Backup Script
+# Creates encrypted, compressed backups with retention management
 
 set -e
-
-# Configuration
-CONTAINER_NAME="van-edu-mysql"
-DB_NAME="van_edu_db"
-BACKUP_DIR="/backups"
-RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
-ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY:-""}
-
-# Load environment variables
-if [ -f .env ]; then
-    source .env
-fi
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Functions
-log() {
-    echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')] $1${NC}"
-}
+# Load environment variables
+if [ -f .env ]; then
+    export $(cat .env | grep -v '^#' | xargs)
+fi
 
-warn() {
-    echo -e "${YELLOW}[$(date +'%Y-%m-%d %H:%M:%S')] WARNING: $1${NC}"
-}
-
-error() {
-    echo -e "${RED}[$(date +'%Y-%m-%d %H:%M:%S')] ERROR: $1${NC}"
-}
-
-# Check if container is running
-check_container() {
-    if ! docker ps | grep -q $CONTAINER_NAME; then
-        error "MySQL container '$CONTAINER_NAME' is not running"
-        exit 1
-    fi
-}
+# Configuration
+BACKUP_DIR="./backups"
+CONTAINER_NAME="van-edu-postgres"
+RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY:-"van_edu_backup_key_2024"}
+CLEANUP=${1:-"--cleanup"}
 
 # Create backup directory if it doesn't exist
-create_backup_dir() {
-    if [ ! -d "$BACKUP_DIR" ]; then
-        mkdir -p "$BACKUP_DIR"
-        log "Created backup directory: $BACKUP_DIR"
-    fi
-}
+mkdir -p "$BACKUP_DIR"
 
-# Generate backup filename
-generate_filename() {
-    echo "van_edu_backup_$(date +%Y%m%d_%H%M%S).sql"
-}
+# Generate backup filename with timestamp
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+BACKUP_FILE="van_edu_backup_${TIMESTAMP}.sql"
+COMPRESSED_FILE="${BACKUP_FILE}.gz"
+ENCRYPTED_FILE="${COMPRESSED_FILE}.enc"
+
+echo -e "${BLUE}🗄️  Van Edu Premium Subscription Platform - PostgreSQL Backup${NC}"
+echo -e "${BLUE}================================================================${NC}"
+echo ""
+
+# Check if container is running
+if ! docker ps | grep -q "$CONTAINER_NAME"; then
+    echo -e "${RED}❌ Error: PostgreSQL container '$CONTAINER_NAME' is not running${NC}"
+    exit 1
+fi
+
+# Check if database is accessible
+if ! docker exec "$CONTAINER_NAME" pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/null 2>&1; then
+    echo -e "${RED}❌ Error: Cannot connect to PostgreSQL database${NC}"
+    exit 1
+fi
+
+echo -e "${YELLOW}📋 Backup Configuration:${NC}"
+echo "  Database: $POSTGRES_DB"
+echo "  User: $POSTGRES_USER"
+echo "  Container: $CONTAINER_NAME"
+echo "  Backup Directory: $BACKUP_DIR"
+echo "  Retention: $RETENTION_DAYS days"
+echo "  Encryption: Enabled (AES-256-CBC)"
+echo ""
 
 # Create database backup
-create_backup() {
-    local filename=$1
-    local temp_file="$BACKUP_DIR/temp_$filename"
-    local final_file="$BACKUP_DIR/$filename"
-    
-    log "Starting backup of database '$DB_NAME'..."
-    
-    # Create the backup
-    docker exec $CONTAINER_NAME mysqldump \
-        -u${MYSQL_USER} \
-        -p${MYSQL_PASSWORD} \
-        --single-transaction \
-        --routines \
-        --triggers \
-        --events \
-        --add-drop-database \
-        --databases $DB_NAME > "$temp_file"
-    
-    if [ $? -eq 0 ]; then
-        log "Database backup created successfully"
-    else
-        error "Failed to create database backup"
-        rm -f "$temp_file"
-        exit 1
-    fi
-    
-    # Encrypt backup if encryption key is provided
-    if [ -n "$ENCRYPTION_KEY" ]; then
-        log "Encrypting backup..."
-        openssl enc -aes-256-cbc -salt -in "$temp_file" -out "$final_file.enc" -k "$ENCRYPTION_KEY"
-        if [ $? -eq 0 ]; then
-            rm "$temp_file"
-            final_file="$final_file.enc"
-            log "Backup encrypted successfully"
-        else
-            error "Failed to encrypt backup"
-            mv "$temp_file" "$final_file"
-            warn "Backup saved without encryption"
-        fi
-    else
-        mv "$temp_file" "$final_file"
-        warn "No encryption key provided, backup saved without encryption"
-    fi
-    
-    # Compress backup
-    gzip "$final_file"
-    final_file="$final_file.gz"
-    
-    log "Backup saved as: $final_file"
-    log "Backup size: $(du -h "$final_file" | cut -f1)"
-}
+echo -e "${YELLOW}🔄 Creating database backup...${NC}"
+docker exec "$CONTAINER_NAME" pg_dump \
+    -U "$POSTGRES_USER" \
+    -d "$POSTGRES_DB" \
+    --verbose \
+    --no-password \
+    --format=plain \
+    --no-owner \
+    --no-privileges \
+    --clean \
+    --if-exists \
+    > "$BACKUP_DIR/$BACKUP_FILE"
 
-# Clean old backups
-cleanup_old_backups() {
-    log "Cleaning up backups older than $RETENTION_DAYS days..."
-    
-    find "$BACKUP_DIR" -name "van_edu_backup_*.sql*" -type f -mtime +$RETENTION_DAYS -delete
-    
-    local remaining=$(find "$BACKUP_DIR" -name "van_edu_backup_*.sql*" -type f | wc -l)
-    log "Cleanup completed. $remaining backup files remaining."
-}
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✅ Database backup created: $BACKUP_FILE${NC}"
+else
+    echo -e "${RED}❌ Error: Failed to create database backup${NC}"
+    exit 1
+fi
+
+# Compress backup
+echo -e "${YELLOW}🗜️  Compressing backup...${NC}"
+gzip "$BACKUP_DIR/$BACKUP_FILE"
+
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✅ Backup compressed: $COMPRESSED_FILE${NC}"
+else
+    echo -e "${RED}❌ Error: Failed to compress backup${NC}"
+    exit 1
+fi
+
+# Encrypt backup
+echo -e "${YELLOW}🔐 Encrypting backup...${NC}"
+openssl enc -aes-256-cbc -salt -in "$BACKUP_DIR/$COMPRESSED_FILE" -out "$BACKUP_DIR/$ENCRYPTED_FILE" -k "$ENCRYPTION_KEY"
+
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}✅ Backup encrypted: $ENCRYPTED_FILE${NC}"
+    # Remove unencrypted compressed file
+    rm "$BACKUP_DIR/$COMPRESSED_FILE"
+else
+    echo -e "${RED}❌ Error: Failed to encrypt backup${NC}"
+    exit 1
+fi
+
+# Get backup file size
+BACKUP_SIZE=$(du -h "$BACKUP_DIR/$ENCRYPTED_FILE" | cut -f1)
+echo -e "${GREEN}📦 Final backup size: $BACKUP_SIZE${NC}"
 
 # Verify backup integrity
-verify_backup() {
-    local backup_file=$1
-    log "Verifying backup integrity..."
-    
-    if [[ "$backup_file" == *.gz ]]; then
-        if gzip -t "$backup_file"; then
-            log "Backup integrity verified"
-        else
-            error "Backup integrity check failed"
-            exit 1
-        fi
-    fi
-}
-
-# Main execution
-main() {
-    log "Starting Van Edu database backup process..."
-    
-    check_container
-    create_backup_dir
-    
-    local filename=$(generate_filename)
-    create_backup "$filename"
-    
-    local final_backup="$BACKUP_DIR/$filename"
-    if [ -n "$ENCRYPTION_KEY" ]; then
-        final_backup="$final_backup.enc"
-    fi
-    final_backup="$final_backup.gz"
-    
-    verify_backup "$final_backup"
-    cleanup_old_backups
-    
-    log "Backup process completed successfully!"
-    log "Backup location: $final_backup"
-}
-
-# Show usage
-usage() {
-    echo "Usage: $0 [OPTIONS]"
-    echo ""
-    echo "Options:"
-    echo "  -h, --help     Show this help message"
-    echo "  --no-cleanup   Skip cleanup of old backups"
-    echo ""
-    echo "Environment variables:"
-    echo "  BACKUP_RETENTION_DAYS  Number of days to keep backups (default: 30)"
-    echo "  BACKUP_ENCRYPTION_KEY  Key for encrypting backups"
-    echo ""
-}
-
-# Parse command line arguments
-NO_CLEANUP=false
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        -h|--help)
-            usage
-            exit 0
-            ;;
-        --no-cleanup)
-            NO_CLEANUP=true
-            shift
-            ;;
-        *)
-            error "Unknown option: $1"
-            usage
-            exit 1
-            ;;
-    esac
-done
-
-# Run main function
-if [ "$NO_CLEANUP" = true ]; then
-    log "Skipping cleanup as requested"
-    check_container
-    create_backup_dir
-    filename=$(generate_filename)
-    create_backup "$filename"
-    
-    final_backup="$BACKUP_DIR/$filename"
-    if [ -n "$ENCRYPTION_KEY" ]; then
-        final_backup="$final_backup.enc"
-    fi
-    final_backup="$final_backup.gz"
-    
-    verify_backup "$final_backup"
-    log "Backup completed without cleanup"
+echo -e "${YELLOW}🔍 Verifying backup integrity...${NC}"
+if openssl enc -aes-256-cbc -d -in "$BACKUP_DIR/$ENCRYPTED_FILE" -k "$ENCRYPTION_KEY" | gunzip | head -n 5 >/dev/null 2>&1; then
+    echo -e "${GREEN}✅ Backup integrity verified${NC}"
 else
-    main
-fi 
+    echo -e "${RED}❌ Warning: Backup integrity check failed${NC}"
+fi
+
+# Cleanup old backups if requested
+if [ "$CLEANUP" = "--cleanup" ]; then
+    echo -e "${YELLOW}🧹 Cleaning up old backups (older than $RETENTION_DAYS days)...${NC}"
+    
+    DELETED_COUNT=0
+    for file in "$BACKUP_DIR"/van_edu_backup_*.sql.gz.enc; do
+        if [ -f "$file" ]; then
+            # Check if file is older than retention period
+            if [ "$(find "$file" -mtime +$RETENTION_DAYS)" ]; then
+                echo "  Deleting: $(basename "$file")"
+                rm "$file"
+                ((DELETED_COUNT++))
+            fi
+        fi
+    done
+    
+    if [ $DELETED_COUNT -gt 0 ]; then
+        echo -e "${GREEN}✅ Deleted $DELETED_COUNT old backup(s)${NC}"
+    else
+        echo -e "${GREEN}✅ No old backups to delete${NC}"
+    fi
+fi
+
+# Show backup summary
+echo ""
+echo -e "${BLUE}📊 Backup Summary:${NC}"
+echo "  Backup File: $ENCRYPTED_FILE"
+echo "  Size: $BACKUP_SIZE"
+echo "  Location: $BACKUP_DIR/$ENCRYPTED_FILE"
+echo "  Created: $(date)"
+echo ""
+
+# List all available backups
+echo -e "${BLUE}📁 Available Backups:${NC}"
+if ls "$BACKUP_DIR"/van_edu_backup_*.sql.gz.enc >/dev/null 2>&1; then
+    for backup in "$BACKUP_DIR"/van_edu_backup_*.sql.gz.enc; do
+        if [ -f "$backup" ]; then
+            SIZE=$(du -h "$backup" | cut -f1)
+            DATE=$(stat -c %y "$backup" | cut -d' ' -f1,2 | cut -d'.' -f1)
+            echo "  $(basename "$backup") - $SIZE - $DATE"
+        fi
+    done
+else
+    echo "  No backups found"
+fi
+
+echo ""
+echo -e "${GREEN}🎉 Backup completed successfully!${NC}"
+echo ""
+echo -e "${YELLOW}💡 To restore this backup, run:${NC}"
+echo "  make restore"
+echo ""
+echo -e "${YELLOW}💡 To schedule automatic backups, add to crontab:${NC}"
+echo "  0 2 * * * cd $(pwd) && make backup >/dev/null 2>&1" 

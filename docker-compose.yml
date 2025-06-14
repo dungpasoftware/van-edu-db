@@ -1,67 +1,65 @@
 version: '3.8'
 
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: van-edu-mysql
+  postgres:
+    image: postgres:15
+    container_name: van-edu-postgres
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password_change_me}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-van_edu_db}
-      MYSQL_USER: ${MYSQL_USER:-van_edu_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-user_password_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-van_edu_db}
+      POSTGRES_USER: ${POSTGRES_USER:-van_edu_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app_password_change_me}
+      PGDATA: /var/lib/postgresql/data/pgdata
       TZ: ${TIMEZONE:-UTC}
     ports:
-      - "${MYSQL_PORT:-3306}:3306"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - mysql_data:/var/lib/mysql
-      - mysql_logs:/var/log/mysql
+      - postgres_data:/var/lib/postgresql/data
+      - postgres_logs:/var/log/postgresql
       - ./scripts/init:/docker-entrypoint-initdb.d
-      - ./config/mysql.cnf:/etc/mysql/conf.d/custom.cnf:ro
+      - ./config/postgresql.conf:/etc/postgresql/postgresql.conf:ro
       - ./backups:/backups
     networks:
       - van-edu-network
     command: >
-      --character-set-server=utf8mb4
-      --collation-server=utf8mb4_unicode_ci
-      --innodb-buffer-pool-size=512M
-      --max-connections=200
-      --slow-query-log=1
-      --slow-query-log-file=/var/log/mysql/slow.log
-      --long-query-time=2
+      postgres
+      -c config_file=/etc/postgresql/postgresql.conf
+      -c shared_preload_libraries=pg_stat_statements
+      -c log_statement=all
+      -c log_min_duration_statement=2000
+      -c max_connections=200
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root_password_change_me}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-van_edu_app} -d ${POSTGRES_DB:-van_edu_db}"]
       timeout: 20s
       retries: 10
       interval: 30s
       start_period: 40s
 
-  # Optional: phpMyAdmin for database management
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin:latest
-    container_name: van-edu-phpmyadmin
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: van-edu-pgadmin
     restart: unless-stopped
     environment:
-      PMA_HOST: mysql
-      PMA_PORT: 3306
-      PMA_USER: ${MYSQL_USER:-van_edu_user}
-      PMA_PASSWORD: ${MYSQL_PASSWORD:-user_password_change_me}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password_change_me}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@vanedu.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
     ports:
-      - "${PHPMYADMIN_PORT:-8080}:80"
+      - "${PGADMIN_PORT:-8080}:80"
     networks:
       - van-edu-network
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
     profiles:
       - dev
 
 volumes:
-  mysql_data:
-    name: van-edu-mysql-data
-  mysql_logs:
-    name: van-edu-mysql-logs
+  postgres_data:
+    name: van-edu-postgres-data
+  postgres_logs:
+    name: van-edu-postgres-logs
 
 networks:
   van-edu-network:
