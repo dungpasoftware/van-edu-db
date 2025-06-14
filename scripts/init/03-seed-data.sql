@@ -22,20 +22,20 @@ INSERT INTO package (name, type, description, price, duration_days, is_active) V
 -- Insert sample users with admin permissions
 INSERT INTO users (full_name, email, password, phone, address, age, role, is_premium, premium_expiry_date, current_package, permissions) VALUES
 -- Admin users
-('Admin Super User', 'admin@vanedu.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBdXIG/QYuZ7NW', '+1234567890', '123 Admin Street, Tech City', 30, 'admin', FALSE, NULL, NULL, 
+('Admin Super User', 'admin@vanedu.com', '$2b$10$R4e3sHXO5cucTlSKbi94c.tlvuAWo0FKnXExahIOacw28KIHsqq8S', '+1234567890', '123 Admin Street, Tech City', 30, 'admin', FALSE, NULL, NULL, 
 '["upload_video", "edit_video", "delete_video", "create_category", "edit_category", "delete_category", "view_users", "edit_users", "delete_users", "view_analytics", "manage_settings"]'::jsonb),
 
-('Content Manager', 'content@vanedu.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBdXIG/QYuZ7NW', '+1234567891', '456 Content Ave, Media City', 28, 'admin', FALSE, NULL, NULL, 
+('Content Manager', 'content@vanedu.com', '$2b$10$R4e3sHXO5cucTlSKbi94c.tlvuAWo0FKnXExahIOacw28KIHsqq8S', '+1234567891', '456 Content Ave, Media City', 28, 'admin', FALSE, NULL, NULL, 
 '["upload_video", "edit_video", "create_category", "edit_category"]'::jsonb),
 
 -- Normal users - Free accounts
-('John Smith', 'john@example.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBdXIG/QYuZ7NW', '+1555123456', '789 Student Lane, Learning City', 22, 'user', FALSE, NULL, NULL, NULL),
-('Sarah Johnson', 'sarah@example.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBdXIG/QYuZ7NW', '+1555123457', '321 Knowledge Street, Study Town', 25, 'user', FALSE, NULL, NULL, NULL),
+('John Smith', 'john@example.com', '$2b$10$R4e3sHXO5cucTlSKbi94c.tlvuAWo0FKnXExahIOacw28KIHsqq8S', '+1555123456', '789 Student Lane, Learning City', 22, 'user', FALSE, NULL, NULL, NULL),
+('Sarah Johnson', 'sarah@example.com', '$2b$10$R4e3sHXO5cucTlSKbi94c.tlvuAWo0FKnXExahIOacw28KIHsqq8S', '+1555123457', '321 Knowledge Street, Study Town', 25, 'user', FALSE, NULL, NULL, NULL),
 
 -- Premium users
-('Michael Brown', 'michael@example.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBdXIG/QYuZ7NW', '+1555123458', '654 Premium Blvd, Elite District', 29, 'user', TRUE, '2024-12-31 23:59:59'::timestamp, 'monthly', NULL),
-('Emily Davis', 'emily@example.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBdXIG/QYuZ7NW', '+1555123459', '987 Annual Ave, Subscriber City', 26, 'user', TRUE, '2025-06-30 23:59:59'::timestamp, 'annual', NULL),
-('David Wilson', 'david@example.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBdXIG/QYuZ7NW', '+1555123460', '147 Lifetime Lane, Forever City', 35, 'user', TRUE, NULL, 'lifetime', NULL);
+('Michael Brown', 'michael@example.com', '$2b$10$R4e3sHXO5cucTlSKbi94c.tlvuAWo0FKnXExahIOacw28KIHsqq8S', '+1555123458', '654 Premium Blvd, Elite District', 29, 'user', TRUE, '2024-12-31 23:59:59'::timestamp, 'monthly', NULL),
+('Emily Davis', 'emily@example.com', '$2b$10$R4e3sHXO5cucTlSKbi94c.tlvuAWo0FKnXExahIOacw28KIHsqq8S', '+1555123459', '987 Annual Ave, Subscriber City', 26, 'user', TRUE, '2025-06-30 23:59:59'::timestamp, 'annual', NULL),
+('David Wilson', 'david@example.com', '$2b$10$R4e3sHXO5cucTlSKbi94c.tlvuAWo0FKnXExahIOacw28KIHsqq8S', '+1555123460', '147 Lifetime Lane, Forever City', 35, 'user', TRUE, NULL, 'lifetime', NULL);
 
 -- Insert categories
 INSERT INTO categories (name, description, is_active) VALUES
